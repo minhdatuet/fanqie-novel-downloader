@@ -22,9 +22,15 @@ export function JobStatus({
   downloadUrl,
   formatLabel
 }: JobStatusProps) {
+  const isPlaceholderJob = job.id === "pending";
   const isRunning = job.status === "running" || job.status === "queued";
   const isCompleted = job.status === "completed";
   const isFailed = job.status === "failed";
+  const description = isPlaceholderJob
+    ? job.progress.message || "Sẵn sàng tải"
+    : job.status === "queued"
+      ? "Đang chờ trong hàng đợi..."
+      : job.progress.message || "Đang xử lý...";
 
   const Icon = type === "download" ? Download : Languages;
 
@@ -39,7 +45,7 @@ export function JobStatus({
             <div>
               <CardTitle className="text-lg">{title}</CardTitle>
               <CardDescription>
-                {job.status === "queued" ? "Đang chờ trong hàng đợi..." : job.progress.message || "Đang xử lý..."}
+                {description}
               </CardDescription>
             </div>
           </div>
@@ -56,7 +62,7 @@ export function JobStatus({
           </div>
           <Progress value={job.progress.percent} className="h-2" />
           <div className="flex justify-between text-[11px] text-muted-foreground uppercase tracking-wider">
-            <span>{job.status}</span>
+            <span>{isPlaceholderJob ? "sẵn sàng" : job.status}</span>
             <span>{job.progress.current} / {job.progress.total}</span>
           </div>
         </div>

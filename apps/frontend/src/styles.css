@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @plugin "tailwindcss-animate";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
@@ -77,6 +79,7 @@
     --ring: 161 72% 35%;
 
     --radius: 0.75rem;
+    color-scheme: light;
   }
 
   .dark {
@@ -107,6 +110,7 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 161 72% 45%;
+    color-scheme: dark;
   }
 }
 
