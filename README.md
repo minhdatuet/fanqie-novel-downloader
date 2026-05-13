@@ -48,6 +48,8 @@ npm run legacy:start
 
 - `JOB_CONCURRENCY`: số job tải/dịch chạy song song ở backend mới. Mặc định `4` để chịu nhiều user mà không mở
   quá nhiều job nặng.
+- `TRANSLATION_CONCURRENCY`: số chương dịch song song trong một job dịch. Mặc định `8`, gần với kiểu batch song song
+  của project gốc và nhanh hơn dịch tuần tự.
 - `LEGACY_MAX_WORKERS`: số worker tải nội bộ của exe gốc. Mặc định `8`; tăng lên `10-12` nếu máy/mạng khỏe,
   giảm nếu bị timeout hoặc throttle.
 - `MAX_WORKERS`: số worker cho downloader TypeScript fallback khi không dùng legacy bridge.

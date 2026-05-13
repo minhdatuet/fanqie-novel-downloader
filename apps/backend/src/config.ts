@@ -18,6 +18,7 @@ export interface AppConfig
     maxWorkers: number;
     port: number;
     requestTimeoutMs: number;
+    translationConcurrency: number;
     stvApiKey: string;
     stvApiUrl: string;
     stvModel: string;
@@ -108,6 +109,7 @@ export function loadConfig(): AppConfig
         maxWorkers: Math.max(1, readNumber("MAX_WORKERS", 8)),
         port: readNumber("PORT", 8787),
         requestTimeoutMs: readNumber("REQUEST_TIMEOUT_MS", 30_000),
+        translationConcurrency: Math.max(1, readNumber("TRANSLATION_CONCURRENCY", 8)),
         stvApiKey: process.env.STV_API_KEY ?? "",
         stvApiUrl: process.env.STV_API_URL ?? "",
         stvModel: process.env.STV_MODEL ?? "",

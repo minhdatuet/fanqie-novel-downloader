@@ -260,21 +260,43 @@ export class JobService
             });
 
             const chapters = await this.loadSourceChapters(source);
-            const translated: StoredChapter[] = [];
+            const translated: StoredChapter[] = new Array(chapters.length);
+            const batchSize = Math.max(1, this.config.translationConcurrency);
+            let completedChapters = 0;
 
-            for (const [index, chapter] of chapters.entries())
+            for (let batchStart = 0; batchStart < chapters.length; batchStart += batchSize)
             {
-                const title = await this.translator.translateText(chapter.title);
-                const content = await this.translator.translateText(chapter.content);
-                translated.push({
-                    content,
-                    id: chapter.id,
-                    title
-                });
+                const batchEnd = Math.min(batchStart + batchSize, chapters.length);
+                const batch = chapters.slice(batchStart, batchEnd);
 
-                this.update(jobId, {
-                    progress: progress(index + 1, chapters.length, `Đã dịch ${index + 1}/${chapters.length} chương`)
-                });
+                await Promise.all(batch.map(async (chapter, offset) =>
+                {
+                    const [title, content] = await Promise.all([
+                        this.translator.translateText(chapter.title),
+                        this.translator.translateText(chapter.content)
+                    ]);
+                    const translatedIndex = batchStart + offset;
+
+                    translated[translatedIndex] = {
+                        content,
+                        id: chapter.id,
+                        title
+                    };
+
+                    completedChapters += 1;
+                    this.update(jobId, {
+                        progress: progress(
+                            completedChapters,
+                            chapters.length,
+                            `Đã dịch ${completedChapters}/${chapters.length} chương`
+                        )
+                    });
+                }));
+
+                if (batchEnd < chapters.length)
+                {
+                    await sleep(250);
+                }
             }
 
             const fileBase = sanitizeFileName(`${source.book.bookId}_${source.book.title}`);
