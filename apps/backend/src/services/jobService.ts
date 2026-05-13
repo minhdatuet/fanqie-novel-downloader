@@ -34,6 +34,10 @@ export class JobService
     private readonly jobs = new Map<string, JobRecord>();
     private readonly legacy: LegacyService;
     private readonly legacyJobMap = new Map<string, number>();
+    private readonly metadataCache = new Map<string, {
+        expiresAt: number;
+        book: BookInfo;
+    }>();
     private readonly library: LibraryService;
     private activeTasks = 0;
     private readonly taskQueue: Array<() => Promise<void>> = [];
@@ -51,12 +55,15 @@ export class JobService
 
     public async resolveBook(input: string): Promise<DownloadPlan>
     {
-        if (this.config.legacyBridgeEnabled)
-        {
-            return this.legacy.resolveBook(input);
-        }
+        const plan = this.config.legacyBridgeEnabled
+            ? await this.legacy.resolveBook(input)
+            : await this.fanqie.preparePlan(input);
+        const book = await this.translateBookMetadataAsync(plan.book);
 
-        return this.fanqie.preparePlan(input);
+        return {
+            ...plan,
+            book
+        };
     }
 
     /**
@@ -161,19 +168,24 @@ export class JobService
             });
 
             const plan = await this.fanqie.preparePlan(input);
+            const translatedBook = await this.translateBookMetadataAsync(plan.book);
             this.update(jobId, {
-                book: plan.book,
+                book: translatedBook,
                 progress: progress(0, plan.chapters.length, "Đã lấy thông tin, bắt đầu tải chương")
             });
 
-            const chapters = await this.fanqie.downloadPlan(plan, (state) =>
+            const translatedPlan = {
+                ...plan,
+                book: translatedBook
+            };
+            const chapters = await this.fanqie.downloadPlan(translatedPlan, (state) =>
             {
                 this.update(jobId, {
                     progress: progress(state.current, state.total, state.message)
                 });
             });
 
-            await this.saveDownloadedBook(jobId, plan.book, chapters, format);
+            await this.saveDownloadedBook(jobId, translatedBook, chapters, format);
         }
         catch (error)
         {
@@ -191,8 +203,9 @@ export class JobService
             });
 
             const plan = await this.legacy.resolveBook(input);
+            const translatedBook = await this.translateBookMetadataAsync(plan.book);
             this.update(jobId, {
-                book: plan.book,
+                book: translatedBook,
                 progress: progress(0, plan.book.chapterCount || 1, "Đã lấy thông tin truyện")
             });
 
@@ -213,9 +226,8 @@ export class JobService
                     {
                         this.update(jobId, {
                             book: {
-                                ...plan.book,
+                                ...translatedBook,
                                 author: current.author ?? plan.book.author,
-                                title: current.title ?? plan.book.title
                             }
                         });
                     }
@@ -224,7 +236,7 @@ export class JobService
                     {
                         const originalTxt = await this.legacy.findOutputTxt(
                             current.book_id,
-                            current.title ?? plan.book.title
+                            translatedBook.title
                         );
 
                         if (!originalTxt)
@@ -238,7 +250,7 @@ export class JobService
                             throw new Error("Không đọc được nội dung từ file TXT đầu ra");
                         }
 
-                        await this.saveDownloadedBook(jobId, plan.book, chapters, format);
+                        await this.saveDownloadedBook(jobId, translatedBook, chapters, format);
                         return;
                     }
 
@@ -479,18 +491,32 @@ export class JobService
 
     private async translateBookMetadataAsync(book: BookInfo): Promise<BookInfo>
     {
+        const cached = this.metadataCache.get(book.bookId);
+
+        if (cached && cached.expiresAt > Date.now())
+        {
+            return cached.book;
+        }
+
         const [title, description, tags] = await Promise.all([
             this.translateSingleLineAsync(book.title),
             this.translateDescriptionAsync(book.description),
             this.translateTagsAsync(book.tags)
         ]);
 
-        return {
+        const translatedBook = {
             ...book,
             description,
             tags,
             title
         };
+
+        this.metadataCache.set(book.bookId, {
+            book: translatedBook,
+            expiresAt: Date.now() + 30 * 60 * 1000
+        });
+
+        return translatedBook;
     }
 
     private async translateDescriptionAsync(description: string | undefined): Promise<string | undefined>

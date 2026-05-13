@@ -158,7 +158,7 @@ export class LibraryService
             const translated = candidates.filter((item) => isTranslatedPath(item.path));
             const original = latest(originals);
             const translatedFile = latest(translated);
-            const basis = original ?? translatedFile;
+            const basis = translatedFile ?? original;
 
             if (!basis)
             {
