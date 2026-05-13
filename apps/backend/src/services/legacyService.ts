@@ -66,8 +66,13 @@ interface LegacyConfigPatch
 
 export class LegacyService
 {
+    private static readonly PREVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
     private readonly baseUrl: string;
     private readonly config: AppConfig;
+    private readonly previewCache = new Map<string, {
+        expiresAt: number;
+        plan: DownloadPlan;
+    }>();
     private process?: ChildProcessWithoutNullStreams;
     private startPromise?: Promise<void>;
 
@@ -79,26 +84,38 @@ export class LegacyService
 
     public async resolveBook(input: string): Promise<DownloadPlan>
     {
-        await this.ensureRunning();
         const bookId = parseBookId(input);
 
         if (!bookId)
         {
-            throw new Error("Không tìm thấy ID truyện trong dữ liệu nhập");
+            throw new Error("Kh??ng t??m th???y ID truy???n trong d??? li???u nh???p");
         }
 
+        const cachedPlan = this.getCachedPreview(bookId);
+
+        if (cachedPlan)
+        {
+            return cachedPlan;
+        }
+
+        await this.ensureRunning();
         const preview = await this.requestJson<LegacyPreview>(
             `/api/preview/${encodeURIComponent(bookId)}`,
             undefined,
             this.config.requestTimeoutMs * 6
         );
-        const book = this.mapPreview(preview, bookId);
-
-        return {
-            book,
+        const plan = {
+            book: this.mapPreview(preview, bookId),
             chapters: [],
             raw: preview
         };
+
+        this.previewCache.set(bookId, {
+            expiresAt: Date.now() + LegacyService.PREVIEW_CACHE_TTL_MS,
+            plan
+        });
+
+        return plan;
     }
 
     public async createDownloadJob(input: string): Promise<LegacyJob>
@@ -189,6 +206,32 @@ export class LegacyService
         reply.header("content-disposition", `attachment; filename="${fileName}"; filename*=UTF-8''${fileName}`);
 
         return reply.redirect(`${this.baseUrl}/download/${encoded}`);
+    }
+
+    /**
+     * Khởi động sớm legacy backend để giảm độ trễ ở lần kiểm tra đầu tiên.
+     */
+    public async warmUpAsync(): Promise<void>
+    {
+        await this.ensureRunning();
+    }
+
+    private getCachedPreview(bookId: string): DownloadPlan | undefined
+    {
+        const cached = this.previewCache.get(bookId);
+
+        if (!cached)
+        {
+            return undefined;
+        }
+
+        if (cached.expiresAt <= Date.now())
+        {
+            this.previewCache.delete(bookId);
+            return undefined;
+        }
+
+        return cached.plan;
     }
 
     private async ensureRunning(): Promise<void>

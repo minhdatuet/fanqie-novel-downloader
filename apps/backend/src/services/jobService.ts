@@ -53,6 +53,19 @@ export class JobService
         return this.fanqie.preparePlan(input);
     }
 
+    /**
+     * Khởi động sớm legacy backend để giảm độ trễ ở lần kiểm tra đầu tiên.
+     */
+    public async warmLegacyAsync(): Promise<void>
+    {
+        if (!this.config.legacyBridgeEnabled)
+        {
+            return;
+        }
+
+        await this.legacy.warmUpAsync();
+    }
+
     public createDownloadJob(input: string, format: DownloadFormat = "txt"): JobRecord
     {
         const job = this.createJob("download", undefined, undefined, format);

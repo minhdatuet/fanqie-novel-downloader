@@ -28,6 +28,8 @@ async function bootstrap(): Promise<void>
     const jobService = new JobService(config, libraryService);
     await registerApiRoutes(app, jobService, libraryService, config);
 
+    await jobService.warmLegacyAsync();
+
     const currentDir = dirname(fileURLToPath(import.meta.url));
     const frontendDist = resolve(currentDir, "..", "..", "frontend", "dist");
 

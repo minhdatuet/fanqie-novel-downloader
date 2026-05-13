@@ -20,9 +20,19 @@ interface DownloadBody
     format?: "txt" | "epub";
 }
 
-interface RouteParams
+interface JobIdParams
 {
     id: string;
+}
+
+interface PreviewKeyParams
+{
+    key: string;
+}
+
+interface PreviewBookIdParams
+{
+    bookId: string;
 }
 
 interface FileQuery
@@ -46,6 +56,20 @@ export async function registerApiRoutes(
     app.get("/api/health", async () => ({
         ok: true
     }));
+
+    app.get<{ Params: PreviewKeyParams }>("/api/preview-cover/:key", async (request, reply) =>
+    {
+        return proxyLegacyImage(reply, config, `/api/preview-cover/${encodeURIComponent(request.params.key)}`);
+    });
+
+    app.get<{ Params: PreviewBookIdParams }>("/api/preview-cover-by-book/:bookId", async (request, reply) =>
+    {
+        return proxyLegacyImage(
+            reply,
+            config,
+            `/api/preview-cover-by-book/${encodeURIComponent(request.params.bookId)}`
+        );
+    });
 
     app.post<{ Body: ResolveBody }>("/api/books/resolve", async (request) =>
     {
@@ -72,12 +96,12 @@ export async function registerApiRoutes(
         return jobService.createDownloadJob(input, format);
     });
 
-    app.post<{ Params: RouteParams }>("/api/jobs/:id/translate", async (request) =>
+    app.post<{ Params: JobIdParams }>("/api/jobs/:id/translate", async (request) =>
     {
         return jobService.createTranslateJob(request.params.id);
     });
 
-    app.get<{ Params: RouteParams }>("/api/jobs/:id", async (request, reply) =>
+    app.get<{ Params: JobIdParams }>("/api/jobs/:id", async (request, reply) =>
     {
         const job = jobService.getJob(request.params.id);
 
@@ -91,7 +115,7 @@ export async function registerApiRoutes(
         return job;
     });
 
-    app.get<{ Params: RouteParams }>("/api/jobs/:id/events", async (request, reply) =>
+    app.get<{ Params: JobIdParams }>("/api/jobs/:id/events", async (request, reply) =>
     {
         const job = jobService.getJob(request.params.id);
 
@@ -125,7 +149,7 @@ export async function registerApiRoutes(
         request.raw.on("close", unsubscribe);
     });
 
-    app.get<{ Params: RouteParams; Querystring: FileQuery }>("/api/jobs/:id/file", async (request, reply) =>
+    app.get<{ Params: JobIdParams; Querystring: FileQuery }>("/api/jobs/:id/file", async (request, reply) =>
     {
         const job = jobService.getJob(request.params.id);
         const kind = request.query.kind ?? "original";
@@ -154,7 +178,7 @@ export async function registerApiRoutes(
         items: await libraryService.list(request.query)
     }));
 
-    app.get<{ Params: RouteParams; Querystring: FileQuery }>("/api/library/:id/file", async (request, reply) =>
+    app.get<{ Params: JobIdParams; Querystring: FileQuery }>("/api/library/:id/file", async (request, reply) =>
     {
         const item = await libraryService.findByBookId(request.params.id);
         const kind = request.query.kind ?? "original";
@@ -171,7 +195,7 @@ export async function registerApiRoutes(
         return sendFileDownload(reply, safePath);
     });
 
-    app.post<{ Params: RouteParams }>("/api/library/:id/translate", async (request, reply) =>
+    app.post<{ Params: JobIdParams }>("/api/library/:id/translate", async (request, reply) =>
     {
         const item = await libraryService.findByBookId(request.params.id);
 
@@ -198,4 +222,36 @@ function prepareSse(reply: FastifyReply): void
 function sendSse(reply: FastifyReply, payload: unknown): void
 {
     reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+async function proxyLegacyImage(reply: FastifyReply, config: AppConfig, path: string): Promise<FastifyReply>
+{
+    if (!config.legacyBridgeEnabled)
+    {
+        return reply.code(404).send({
+            error: "Không hỗ trợ ảnh xem trước"
+        });
+    }
+
+    const baseUrl = `http://${config.legacyHost}:${config.legacyPort}`;
+    const response = await fetch(`${baseUrl}${path}`, {
+        signal: AbortSignal.timeout(config.requestTimeoutMs * 2)
+    });
+
+    if (!response.ok)
+    {
+        return reply.code(response.status).send({
+            error: "Không tải được ảnh xem trước"
+        });
+    }
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const contentType = response.headers.get("content-type") ?? "image/jpeg";
+
+    reply.header("cache-control", "no-store, no-cache, must-revalidate");
+    reply.header("content-type", contentType);
+    reply.header("pragma", "no-cache");
+    reply.header("expires", "0");
+
+    return reply.send(bytes);
 }
