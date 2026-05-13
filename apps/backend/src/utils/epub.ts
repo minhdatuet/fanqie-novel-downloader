@@ -11,8 +11,16 @@ const EPUB_NAMESPACE = Uint8Array.from([
 interface EpubOptions
 {
     book: BookInfo;
+    coverImage?: EpubCoverImage;
     description?: string;
+    title: string;
     translated: boolean;
+}
+
+interface EpubCoverImage
+{
+    data: Buffer;
+    mimeType: string;
 }
 
 export async function buildEpubBuffer(
@@ -23,15 +31,30 @@ export async function buildEpubBuffer(
     const zip = new JSZip();
     const language = options.translated ? "vi" : "zh";
     const hasIntro = Boolean(options.description?.trim());
+    const hasCover = Boolean(options.coverImage);
     const introTitle = language === "vi" ? "Giới thiệu" : "简介";
+    const coverTitle = language === "vi" ? "Bìa" : "封面";
 
     zip.file("mimetype", "application/epub+zip", {
         compression: "STORE"
     });
 
     const uuid = createStableUuid(options.book.bookId);
-    const title = options.translated ? `${options.book.title} - Bản dịch` : options.book.title;
+    const title = options.title;
     const chapterFiles: string[] = [];
+    const coverImageFileName = hasCover && options.coverImage
+        ? getCoverImageFileName(options.coverImage.mimeType)
+        : undefined;
+
+    if (hasCover && options.coverImage && coverImageFileName)
+    {
+        zip.file(`OEBPS/images/${coverImageFileName}`, options.coverImage.data, {
+            compression: "STORE"
+        });
+        zip.file("OEBPS/cover.xhtml", buildCoverDocument(title, coverImageFileName, coverTitle, language), {
+            compression: "DEFLATE"
+        });
+    }
 
     if (hasIntro)
     {
@@ -61,26 +84,40 @@ export async function buildEpubBuffer(
         compression: "DEFLATE"
     });
 
-    zip.file("OEBPS/nav.xhtml", buildNavDocument(title, introTitle, hasIntro, chapters, language), {
-        compression: "DEFLATE"
-    });
+    zip.file(
+        "OEBPS/nav.xhtml",
+        buildNavDocument(title, introTitle, coverTitle, hasCover, hasIntro, chapters, language),
+        {
+            compression: "DEFLATE"
+        }
+    );
 
-    zip.file("OEBPS/toc.ncx", buildTocDocument(title, uuid, introTitle, hasIntro, chapters), {
-        compression: "DEFLATE"
-    });
+    zip.file(
+        "OEBPS/toc.ncx",
+        buildTocDocument(title, uuid, introTitle, coverTitle, hasCover, hasIntro, chapters),
+        {
+            compression: "DEFLATE"
+        }
+    );
 
-    zip.file("OEBPS/content.opf", buildOpfDocument({
-        book: options.book,
-        chapterFiles,
-        description: options.description ?? "",
-        hasIntro,
-        language,
-        introTitle,
-        title,
-        uuid
-    }), {
-        compression: "DEFLATE"
-    });
+    zip.file(
+        "OEBPS/content.opf",
+        buildOpfDocument({
+            book: options.book,
+            chapterFiles,
+            coverImage: options.coverImage,
+            coverImageFileName,
+            description: options.description ?? "",
+            hasCover,
+            hasIntro,
+            language,
+            title,
+            uuid
+        }),
+        {
+            compression: "DEFLATE"
+        }
+    );
 
     zip.file("OEBPS/styles/book.css", buildStylesheet(), {
         compression: "DEFLATE"
@@ -107,19 +144,30 @@ function buildContainerXml(): string
 function buildOpfDocument(params: {
     book: BookInfo;
     chapterFiles: readonly string[];
+    coverImage?: EpubCoverImage;
+    coverImageFileName?: string;
     description: string;
+    hasCover: boolean;
     hasIntro: boolean;
     language: "vi" | "zh";
-    introTitle: string;
     title: string;
     uuid: string;
 }): string
 {
     const manifestItems = [
+        ...(params.hasCover && params.coverImageFileName && params.coverImage
+            ? [
+                `<item id="cover-image" href="images/${params.coverImageFileName}" ` +
+                    `media-type="${params.coverImage.mimeType}" properties="cover-image"/>`,
+                `<item id="cover-page" href="cover.xhtml" media-type="application/xhtml+xml"/>`
+            ]
+            : []),
+        ...(params.hasIntro
+            ? [`<item id="intro" href="intro.xhtml" media-type="application/xhtml+xml"/>`]
+            : []),
         `<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>`,
         `<item id="toc" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`,
         `<item id="css" href="styles/book.css" media-type="text/css"/>`,
-        ...(params.hasIntro ? [`<item id="intro" href="intro.xhtml" media-type="application/xhtml+xml"/>`] : []),
         ...params.chapterFiles.map((fileName, index) =>
         {
             const id = `chapter-${index + 1}`;
@@ -127,6 +175,7 @@ function buildOpfDocument(params: {
         })
     ];
     const spineItems = [
+        ...(params.hasCover ? [`<itemref idref="cover-page"/>`] : []),
         ...(params.hasIntro ? [`<itemref idref="intro"/>`] : []),
         ...params.chapterFiles.map((_, index) => `<itemref idref="chapter-${index + 1}"/>`)
     ].join("\n    ");
@@ -143,6 +192,7 @@ function buildOpfDocument(params: {
     ${creator ? `<dc:creator>${creator}</dc:creator>` : ""}
     ${tags ? `<dc:subject>${escapeXml(tags)}</dc:subject>` : ""}
     ${description ? `<dc:description>${description}</dc:description>` : ""}
+    ${params.hasCover ? `<meta name="cover" content="cover-image"/>` : ""}
     <meta property="dcterms:modified">${formatUtcTimestamp(new Date())}</meta>
     <meta name="generator" content="Tomato Downloader"/>
   </metadata>
@@ -159,12 +209,15 @@ function buildOpfDocument(params: {
 function buildNavDocument(
     title: string,
     introTitle: string,
+    coverTitle: string,
+    hasCover: boolean,
     hasIntro: boolean,
     chapters: readonly StoredChapter[],
     language: "vi" | "zh"
 ): string
 {
     const tocItems = [
+        ...(hasCover ? [`<li><a href="cover.xhtml">${escapeXml(coverTitle)}</a></li>`] : []),
         ...(hasIntro ? [`<li><a href="intro.xhtml">${escapeXml(introTitle)}</a></li>`] : []),
         ...chapters
             .map((chapter, index) =>
@@ -196,13 +249,21 @@ function buildTocDocument(
     title: string,
     uuid: string,
     introTitle: string,
+    coverTitle: string,
+    hasCover: boolean,
     hasIntro: boolean,
     chapters: readonly StoredChapter[]
 ): string
 {
     const navPoints = [
-        ...(hasIntro
+        ...(hasCover
             ? [`    <navPoint id="navPoint-0" playOrder="1">
+      <navLabel><text>${escapeXml(coverTitle)}</text></navLabel>
+      <content src="cover.xhtml"/>
+    </navPoint>`]
+            : []),
+        ...(hasIntro
+            ? [`    <navPoint id="navPoint-${hasCover ? 1 : 0}" playOrder="${hasCover ? 2 : 1}">
       <navLabel><text>${escapeXml(introTitle)}</text></navLabel>
       <content src="intro.xhtml"/>
     </navPoint>`]
@@ -210,7 +271,7 @@ function buildTocDocument(
         ...chapters
             .map((chapter, index) =>
             {
-                const playOrder = hasIntro ? index + 2 : index + 1;
+                const playOrder = index + 1 + (hasCover ? 1 : 0) + (hasIntro ? 1 : 0);
                 const href = `chapter_${String(index + 1).padStart(4, "0")}.xhtml`;
                 return `    <navPoint id="navPoint-${playOrder}" playOrder="${playOrder}">
       <navLabel><text>${escapeXml(chapter.title)}</text></navLabel>
@@ -233,6 +294,27 @@ function buildTocDocument(
 ${navPoints}
   </navMap>
 </ncx>
+`;
+}
+
+function buildCoverDocument(
+    title: string,
+    imageFileName: string,
+    coverTitle: string,
+    language: "vi" | "zh"
+): string
+{
+    return `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="${language}">
+  <head>
+    <title>${escapeXml(coverTitle)}</title>
+    <link rel="stylesheet" type="text/css" href="styles/book.css"/>
+  </head>
+  <body class="cover-page">
+    <img src="images/${escapeXml(imageFileName)}" alt="${escapeXml(title)}"/>
+  </body>
+</html>
 `;
 }
 
@@ -282,6 +364,22 @@ function buildStylesheet(): string
   font-family: serif;
   line-height: 1.6;
   color: #000;
+}
+
+body.cover-page {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #fff;
+}
+
+body.cover-page img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
 }
 
 h1 {
@@ -340,4 +438,26 @@ function escapeXml(input: string): string
         .replaceAll(">", "&gt;")
         .replaceAll("\"", "&quot;")
         .replaceAll("'", "&apos;");
+}
+
+function getCoverImageFileName(mimeType: string): string
+{
+    const normalized = mimeType.toLowerCase();
+
+    if (normalized.includes("png"))
+    {
+        return "cover.png";
+    }
+
+    if (normalized.includes("webp"))
+    {
+        return "cover.webp";
+    }
+
+    if (normalized.includes("gif"))
+    {
+        return "cover.gif";
+    }
+
+    return "cover.jpg";
 }

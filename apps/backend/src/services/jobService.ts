@@ -20,6 +20,12 @@ interface ChapterProgress
     total: number;
 }
 
+interface CoverImageData
+{
+    data: Buffer;
+    mimeType: string;
+}
+
 export class JobService
 {
     private readonly config: AppConfig;
@@ -265,6 +271,13 @@ export class JobService
                 status: "running"
             });
 
+            const translatedBook = await this.translateBookMetadataAsync(source.book);
+            source.book = translatedBook;
+            this.update(jobId, {
+                book: translatedBook,
+                progress: progress(0, 1, "Đang dịch thông tin truyện")
+            });
+
             const chapters = await this.loadSourceChapters(source);
             const translated: StoredChapter[] = new Array(chapters.length);
             const batchSize = Math.max(1, this.config.translationConcurrency);
@@ -305,14 +318,24 @@ export class JobService
                 }
             }
 
-            const translatedPath = await this.saveTranslatedBook(source, translated, outputFormat);
+            const translatedPath = await this.saveTranslatedBook(source, translatedBook, translated, outputFormat);
             this.library.invalidate();
+            const translatedBaseName = sanitizeFileName(
+                `${translatedBook.bookId}_${translatedBook.title}`
+            );
 
             this.update(jobId, {
                 files: {
+                    metaJson: resolve(
+                        this.config.dataDir,
+                        "books",
+                        source.book.bookId,
+                        `${translatedBaseName}.meta.json`
+                    ),
                     translatedEpub: outputFormat === "epub" ? translatedPath : undefined,
                     translatedTxt: outputFormat === "txt" ? translatedPath : undefined
                 },
+                book: translatedBook,
                 progress: progress(chapters.length, chapters.length, "Đã dịch xong tiếng Việt"),
                 status: "completed"
             });
@@ -363,10 +386,13 @@ export class JobService
         }
         else
         {
+            const coverImage = await this.loadCoverImageAsync(book.coverUrl);
             const epub = await buildEpubBuffer(
                 {
                     book,
+                    coverImage,
                     description: book.description,
+                    title: book.title,
                     translated: false
                 },
                 chapters
@@ -392,6 +418,7 @@ export class JobService
 
     private async saveTranslatedBook(
         source: JobRecord,
+        translatedBook: BookInfo,
         chapters: readonly StoredChapter[],
         format: DownloadFormat
     ): Promise<string>
@@ -406,41 +433,143 @@ export class JobService
             : source.files.originalEpub
                 ? dirname(source.files.originalEpub)
                 : resolve(this.config.dataDir, "books", source.book.bookId);
-        const baseName = source.files.originalTxt
-            ? parse(source.files.originalTxt).name
-            : source.files.originalEpub
-                ? parse(source.files.originalEpub).name
-                : sanitizeFileName(`${source.book.bookId}_${source.book.title}`);
+        const baseName = sanitizeFileName(`${source.book.bookId}_${translatedBook.title}`);
 
         if (format === "txt")
         {
-            const target = resolve(baseDir, `${baseName}_vi.txt`);
+            const target = resolve(baseDir, `${baseName}.vi.txt`);
             const content = composeNovelText(
-                source.book.bookId,
-                source.book.title,
-                source.book.author,
-                source.book.description,
-                source.book.tags,
+                translatedBook.bookId,
+                translatedBook.title,
+                translatedBook.author,
+                translatedBook.description,
+                translatedBook.tags,
                 chapters,
                 true
             );
 
             await writeTextFile(target, content);
+            await writeJsonFile(resolve(baseDir, `${baseName}.meta.json`), {
+                book: translatedBook,
+                format
+            });
             return target;
         }
 
-        const target = resolve(baseDir, `${baseName}_vi.epub`);
+        const target = resolve(baseDir, `${baseName}.vi.epub`);
+        const coverImage = await this.loadCoverImageAsync(translatedBook.coverUrl);
         const epub = await buildEpubBuffer(
             {
-                book: source.book,
-                description: source.book.description,
+                book: translatedBook,
+                coverImage,
+                description: translatedBook.description,
+                title: translatedBook.title,
                 translated: true
             },
             chapters
         );
 
         await writeBinaryFile(target, epub);
+        await writeJsonFile(resolve(baseDir, `${baseName}.meta.json`), {
+            book: translatedBook,
+            format
+        });
         return target;
+    }
+
+    private async translateBookMetadataAsync(book: BookInfo): Promise<BookInfo>
+    {
+        const [title, description, tags] = await Promise.all([
+            this.translateSingleLineAsync(book.title),
+            this.translateDescriptionAsync(book.description),
+            this.translateTagsAsync(book.tags)
+        ]);
+
+        return {
+            ...book,
+            description,
+            tags,
+            title
+        };
+    }
+
+    private async translateDescriptionAsync(description: string | undefined): Promise<string | undefined>
+    {
+        if (!description?.trim())
+        {
+            return description;
+        }
+
+        const translated = await this.translateSafeAsync(description);
+        const normalized = normalizeTranslatedText(translated);
+
+        return normalized || description;
+    }
+
+    private async translateSingleLineAsync(text: string): Promise<string>
+    {
+        const translated = await this.translateSafeAsync(text);
+        const normalized = normalizeTranslatedText(translated).replace(/\s+/g, " ").trim();
+
+        return normalized || text;
+    }
+
+    private async translateTagsAsync(tags: readonly string[]): Promise<string[]>
+    {
+        if (tags.length === 0)
+        {
+            return [];
+        }
+
+        const translated = await Promise.all(tags.map(async (tag) => this.translateSingleLineAsync(tag)));
+        return translated.filter(Boolean);
+    }
+
+    private async translateSafeAsync(text: string): Promise<string>
+    {
+        try
+        {
+            return await this.translator.translateText(text);
+        }
+        catch
+        {
+            return text;
+        }
+    }
+
+    private async loadCoverImageAsync(coverUrl?: string): Promise<CoverImageData | undefined>
+    {
+        if (!coverUrl?.trim())
+        {
+            return undefined;
+        }
+
+        try
+        {
+            const imageUrl = new URL(
+                coverUrl,
+                `http://${this.config.legacyHost}:${this.config.legacyPort}`
+            );
+            const response = await fetch(imageUrl, {
+                signal: AbortSignal.timeout(this.config.requestTimeoutMs * 2)
+            });
+
+            if (!response.ok)
+            {
+                return undefined;
+            }
+
+            const mimeType = response.headers.get("content-type")?.split(";")[0]?.trim() || "image/jpeg";
+
+            return {
+                data: Buffer.from(await response.arrayBuffer()),
+                mimeType
+            };
+        }
+        catch
+        {
+            return undefined;
+        }
     }
 
     private createJob(
@@ -632,4 +761,13 @@ function deriveChaptersJsonPath(path: string): string
 function sleep(ms: number): Promise<void>
 {
     return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+function normalizeTranslatedText(text: string): string
+{
+    return text
+        .replace(/^\[Dịch\]\s*/i, "")
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .trim();
 }

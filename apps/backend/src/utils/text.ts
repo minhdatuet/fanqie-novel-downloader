@@ -85,12 +85,25 @@ export function composeNovelText(
     translated: boolean
 ): string
 {
+    const labels = translated
+        ? {
+            author: "Tác giả",
+            intro: "Giới thiệu:",
+            tags: "Thể loại:",
+            title: "Tên truyện"
+        }
+        : {
+            author: "作者",
+            intro: "简介:",
+            tags: "标签:",
+            title: "书名"
+        };
     const parts: string[] = [
         `book_id=${bookId}`,
-        `书名: ${translated ? `${title} - Bản dịch` : title}`,
-        `作者: ${author ?? ""}`,
-        `标签: ${tags.join(", ")}`,
-        "简介:"
+        `${labels.title}: ${title}`,
+        `${labels.author}: ${author ?? ""}`,
+        `${labels.tags}: ${tags.join(", ")}`,
+        labels.intro
     ];
 
     if (description?.trim())
