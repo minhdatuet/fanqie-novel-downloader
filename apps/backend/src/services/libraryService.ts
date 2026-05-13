@@ -114,11 +114,23 @@ export class LibraryService
         }
 
         const files = await findTextFiles(root);
+        const directBookIds = new Map<string, string>();
+
+        for (const file of files)
+        {
+            const directBookId = extractBookId(file.path) ?? await extractBookIdFromFile(file.path);
+
+            if (directBookId)
+            {
+                directBookIds.set(file.path, directBookId);
+            }
+        }
+
         const groups = new Map<string, TextCandidate[]>();
 
         for (const file of files)
         {
-            const bookId = extractBookId(file.path) ?? await extractBookIdFromFile(file.path);
+            const bookId = resolveBookIdForCandidate(file.path, directBookIds);
 
             if (!bookId)
             {
@@ -220,6 +232,37 @@ function extractBookId(path: string): string | undefined
         ?? basename(path).match(/^(\d{8,})[_-]/)?.[1];
 }
 
+function resolveBookIdForCandidate(path: string, directBookIds: Map<string, string>): string | undefined
+{
+    const directBookId = extractBookId(path);
+
+    if (directBookId)
+    {
+        return directBookId;
+    }
+
+    const headerBookId = directBookIds.get(path);
+
+    if (headerBookId)
+    {
+        return headerBookId;
+    }
+
+    if (!isTranslatedPath(path))
+    {
+        return undefined;
+    }
+
+    const siblingPath = getOriginalSiblingPath(path);
+
+    if (!siblingPath)
+    {
+        return undefined;
+    }
+
+    return directBookIds.get(siblingPath);
+}
+
 async function extractBookIdFromFile(path: string): Promise<string | undefined>
 {
     const raw = await readFile(path, "utf8").catch(() => "");
@@ -231,6 +274,21 @@ function isTranslatedPath(path: string): boolean
 {
     const name = basename(path).toLowerCase();
     return name.includes("_vi.") || name.includes(".vi.") || name.endsWith("_vi.txt");
+}
+
+function getOriginalSiblingPath(path: string): string | undefined
+{
+    const name = basename(path);
+    const siblingName = name
+        .replace(/_vi(?=\.txt$)/i, "")
+        .replace(/\.vi(?=\.txt$)/i, "");
+
+    if (siblingName === name)
+    {
+        return undefined;
+    }
+
+    return resolve(dirname(path), siblingName);
 }
 
 function latest(items: TextCandidate[]): TextCandidate | undefined
