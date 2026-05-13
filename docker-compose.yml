@@ -7,7 +7,7 @@ services:
             PORT: 8787
             WEB_ORIGIN: "*"
         ports:
-            - "10052:8787"
+            - "8787:8787"
         volumes:
             - ./storage:/app/storage
         restart: unless-stopped
