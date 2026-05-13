@@ -15,6 +15,7 @@ interface JobStatusProps
 {
     downloadOptions?: DownloadOption[];
     job: JobRecord;
+    onSecondaryAction?: () => void;
     onAction?: () => void;
     title: string;
     type: "download" | "translate";
@@ -23,6 +24,7 @@ interface JobStatusProps
 export function JobStatus({
     downloadOptions,
     job,
+    onSecondaryAction,
     onAction,
     title,
     type
@@ -87,11 +89,22 @@ export function JobStatus({
                     </div>
                 )}
 
-                {type === "download" && onAction && isPlaceholderJob && (
-                    <Button variant="primary" onClick={onAction} className="w-full gap-2">
-                        <Download className="h-4 w-4" />
-                        Bắt đầu tải
-                    </Button>
+                {type === "download" && isPlaceholderJob && onAction && (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        <Button variant="primary" onClick={onAction} className="w-full gap-2">
+                            <Download className="h-4 w-4" />
+                            Tải TXT
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={onSecondaryAction}
+                            disabled={!onSecondaryAction}
+                            className="w-full gap-2"
+                        >
+                            <Download className="h-4 w-4" />
+                            Tải EPUB
+                        </Button>
+                    </div>
                 )}
 
                 {isCompleted && type === "download" && onAction && (

@@ -11,7 +11,7 @@ import {
   startTranslate,
   subscribeJob
 } from "./api";
-import type { BookInfo, DownloadFormat, DownloadPlan, JobRecord, LibraryItem } from "./types";
+import type { BookInfo, DownloadPlan, JobRecord, LibraryItem } from "./types";
 import { Layout } from "./components/Layout";
 import { NovelSearch } from "./components/NovelSearch";
 import { BookHero } from "./components/BookHero";
@@ -27,7 +27,6 @@ type ViewMode = "download" | "library";
 export function App(): React.JSX.Element {
   const [input, setInput] = useState("");
   const [plan, setPlan] = useState<DownloadPlan>();
-  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>("txt");
   const [downloadJob, setDownloadJob] = useState<JobRecord>();
   const [translateJob, setTranslateJob] = useState<JobRecord>();
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
@@ -116,10 +115,10 @@ export function App(): React.JSX.Element {
     });
   };
 
-  const handleDownload = () => {
+  const handleDownload = (format: "txt" | "epub") => {
     void runAction("download", async () => {
       setTranslateJob(undefined);
-      setDownloadJob(await startDownload(input, downloadFormat));
+      setDownloadJob(await startDownload(input, format));
     });
   };
 
@@ -216,8 +215,6 @@ export function App(): React.JSX.Element {
             onResolve={handleResolve}
             busy={busy === "resolve"}
             error={error}
-            format={downloadFormat}
-            setFormat={setDownloadFormat}
           />
 
           {book && (
@@ -236,7 +233,8 @@ export function App(): React.JSX.Element {
                       progress: { current: 0, total: book.chapterCount, percent: 0, message: "Sẵn sàng tải" },
                       files: {}
                     } as JobRecord}
-                    onAction={handleDownload}
+                    onAction={() => handleDownload("txt")}
+                    onSecondaryAction={() => handleDownload("epub")}
                     downloadOptions={downloadJob?.status === "completed"
                       ? [
                           {

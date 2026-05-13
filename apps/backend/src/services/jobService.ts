@@ -576,14 +576,16 @@ export class JobService
             return cached.book;
         }
 
-        const [title, description, tags] = await Promise.all([
+        const [title, author, description, tags] = await Promise.all([
             this.translateSingleLineAsync(book.title),
+            this.translateAuthorAsync(book.author),
             this.translateDescriptionAsync(book.description),
             this.translateTagsAsync(book.tags)
         ]);
 
         const translatedBook = {
             ...book,
+            author,
             description,
             tags,
             title
@@ -608,6 +610,19 @@ export class JobService
         const normalized = normalizeTranslatedText(translated);
 
         return normalized || description;
+    }
+
+    private async translateAuthorAsync(author: string | undefined): Promise<string | undefined>
+    {
+        if (!author?.trim())
+        {
+            return author;
+        }
+
+        const translated = await this.translateSafeAsync(author);
+        const normalized = normalizeTranslatedText(translated).replace(/\s+/g, " ").trim();
+
+        return normalized || author;
     }
 
     private async translateSingleLineAsync(text: string): Promise<string>

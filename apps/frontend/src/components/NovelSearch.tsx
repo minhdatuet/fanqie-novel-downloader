@@ -3,7 +3,6 @@ import { Search, Loader2 } from "lucide-react";
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/Card";
-import type { DownloadFormat } from "../types";
 
 interface NovelSearchProps {
   input: string;
@@ -11,8 +10,6 @@ interface NovelSearchProps {
   onResolve: () => void;
   busy: boolean;
   error?: string;
-  format: DownloadFormat;
-  setFormat: (f: DownloadFormat) => void;
 }
 
 export function NovelSearch({
@@ -20,9 +17,7 @@ export function NovelSearch({
   setInput,
   onResolve,
   busy,
-  error,
-  format,
-  setFormat
+  error
 }: NovelSearchProps) {
   return (
     <Card className="glass overflow-hidden">
@@ -60,24 +55,6 @@ export function NovelSearch({
                 "Kiểm tra"
               )}
             </Button>
-          </div>
-
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-muted-foreground font-medium">Định dạng mặc định:</span>
-            <div className="flex gap-2">
-              {(["txt", "epub"] as const).map((f) => (
-                <Button
-                  key={f}
-                  type="button"
-                  variant={format === f ? "amber" : "outline"}
-                  size="sm"
-                  onClick={() => setFormat(f)}
-                  className="capitalize"
-                >
-                  {f.toUpperCase()}
-                </Button>
-              ))}
-            </div>
           </div>
 
           {error && (
