@@ -1,3 +1,5 @@
+export type DownloadFormat = "txt" | "epub";
+
 export interface BookInfo
 {
     author?: string;
@@ -28,11 +30,15 @@ export interface JobRecord
     error?: string;
     files: {
         chaptersJson?: string;
+        metaJson?: string;
+        originalEpub?: string;
         originalTxt?: string;
+        translatedEpub?: string;
         translatedTxt?: string;
     };
     id: string;
     kind: "download" | "translate";
+    outputFormat?: DownloadFormat;
     progress: {
         current: number;
         message: string;
@@ -48,7 +54,9 @@ export interface LibraryItem
     bookId: string;
     hasOriginal: boolean;
     hasTranslated: boolean;
+    originalPath?: string;
     relativeDir: string;
     title: string;
+    translatedPath?: string;
     updatedAt: string;
 }

@@ -24,10 +24,16 @@ export interface LibraryQuery
     q?: string;
 }
 
-interface TextCandidate
+interface BookCandidate
 {
     modifiedMs: number;
     path: string;
+}
+
+interface BookMeta
+{
+    book?: BookInfo;
+    format?: string;
 }
 
 export class LibraryService
@@ -113,24 +119,12 @@ export class LibraryService
             return [];
         }
 
-        const files = await findTextFiles(root);
-        const directBookIds = new Map<string, string>();
+        const files = await findBookFiles(root);
+        const groups = new Map<string, BookCandidate[]>();
 
         for (const file of files)
         {
-            const directBookId = extractBookId(file.path) ?? await extractBookIdFromFile(file.path);
-
-            if (directBookId)
-            {
-                directBookIds.set(file.path, directBookId);
-            }
-        }
-
-        const groups = new Map<string, TextCandidate[]>();
-
-        for (const file of files)
-        {
-            const bookId = resolveBookIdForCandidate(file.path, directBookIds);
+            const bookId = extractBookId(file.path) ?? await extractBookIdFromMeta(file.path);
 
             if (!bookId)
             {
@@ -177,9 +171,9 @@ export class LibraryService
     }
 }
 
-async function findTextFiles(dir: string): Promise<TextCandidate[]>
+async function findBookFiles(dir: string): Promise<BookCandidate[]>
 {
-    const out: TextCandidate[] = [];
+    const out: BookCandidate[] = [];
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
 
     for (const entry of entries)
@@ -188,11 +182,16 @@ async function findTextFiles(dir: string): Promise<TextCandidate[]>
 
         if (entry.isDirectory())
         {
-            out.push(...await findTextFiles(path));
+            out.push(...await findBookFiles(path));
             continue;
         }
 
-        if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".txt"))
+        if (!entry.isFile())
+        {
+            continue;
+        }
+
+        if (!/\.(txt|epub)$/i.test(entry.name))
         {
             continue;
         }
@@ -213,8 +212,18 @@ async function findTextFiles(dir: string): Promise<TextCandidate[]>
 
 async function readBookMeta(path: string, fallbackBookId: string): Promise<{ author?: string; title: string }>
 {
+    const meta = await readMetaFile(path);
+
+    if (meta?.book)
+    {
+        return {
+            author: meta.book.author,
+            title: meta.book.title
+        };
+    }
+
     const folderName = basename(dirname(path));
-    const fallbackTitle = folderName.replace(new RegExp(`^${fallbackBookId}_?`), "") || basename(path, ".txt");
+    const fallbackTitle = folderName.replace(new RegExp(`^${fallbackBookId}_?`), "") || baseNameWithoutFormat(path);
     const raw = await readFile(path, "utf8").catch(() => "");
     const head = raw.slice(0, 5000);
     const title = matchLine(head, /(?:书名|Tên sách)\s*[：:]\s*(.+)/i) ?? cleanTitle(fallbackTitle);
@@ -226,74 +235,54 @@ async function readBookMeta(path: string, fallbackBookId: string): Promise<{ aut
     };
 }
 
+async function readMetaFile(path: string): Promise<BookMeta | undefined>
+{
+    const metaPath = resolve(dirname(path), `${baseNameWithoutFormat(path)}.meta.json`);
+    const raw = await readFile(metaPath, "utf8").catch(() => "");
+
+    if (!raw)
+    {
+        return undefined;
+    }
+
+    try
+    {
+        return JSON.parse(raw) as BookMeta;
+    }
+    catch
+    {
+        return undefined;
+    }
+}
+
 function extractBookId(path: string): string | undefined
 {
     return path.match(/(?:^|[\\/])(\d{8,})[_\\/]/)?.[1]
         ?? basename(path).match(/^(\d{8,})[_-]/)?.[1];
 }
 
-function resolveBookIdForCandidate(path: string, directBookIds: Map<string, string>): string | undefined
+async function extractBookIdFromMeta(path: string): Promise<string | undefined>
 {
-    const directBookId = extractBookId(path);
-
-    if (directBookId)
-    {
-        return directBookId;
-    }
-
-    const headerBookId = directBookIds.get(path);
-
-    if (headerBookId)
-    {
-        return headerBookId;
-    }
-
-    if (!isTranslatedPath(path))
-    {
-        return undefined;
-    }
-
-    const siblingPath = getOriginalSiblingPath(path);
-
-    if (!siblingPath)
-    {
-        return undefined;
-    }
-
-    return directBookIds.get(siblingPath);
-}
-
-async function extractBookIdFromFile(path: string): Promise<string | undefined>
-{
-    const raw = await readFile(path, "utf8").catch(() => "");
-    const head = raw.slice(0, 5000);
-    return head.match(/(?:book_id|bookId)\s*[=:：]\s*(\d{8,})/i)?.[1];
+    const meta = await readMetaFile(path);
+    return meta?.book?.bookId;
 }
 
 function isTranslatedPath(path: string): boolean
 {
     const name = basename(path).toLowerCase();
-    return name.includes("_vi.") || name.includes(".vi.") || name.endsWith("_vi.txt");
+    return name.includes("_vi.") || name.includes(".vi.") || name.endsWith("_vi.txt") || name.endsWith("_vi.epub");
 }
 
-function getOriginalSiblingPath(path: string): string | undefined
-{
-    const name = basename(path);
-    const siblingName = name
-        .replace(/_vi(?=\.txt$)/i, "")
-        .replace(/\.vi(?=\.txt$)/i, "");
-
-    if (siblingName === name)
-    {
-        return undefined;
-    }
-
-    return resolve(dirname(path), siblingName);
-}
-
-function latest(items: TextCandidate[]): TextCandidate | undefined
+function latest(items: BookCandidate[]): BookCandidate | undefined
 {
     return [...items].sort((left, right) => right.modifiedMs - left.modifiedMs)[0];
+}
+
+function baseNameWithoutFormat(path: string): string
+{
+    return basename(path)
+        .replace(/(\.zh|\.vi)?\.(txt|epub)$/i, "")
+        .replace(/(_vi|\.vi)$/i, "");
 }
 
 function matchLine(input: string, pattern: RegExp): string | undefined
@@ -306,6 +295,7 @@ function cleanTitle(input: string): string
 {
     return input
         .replace(/\.(zh|vi)?\.?txt$/i, "")
+        .replace(/\.(zh|vi)?\.?epub$/i, "")
         .replace(/_vi$/i, "")
         .trim() || "Truyện chưa đặt tên";
 }

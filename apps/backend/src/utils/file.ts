@@ -52,10 +52,16 @@ export function assertInsideBase(baseDir: string, targetPath: string): string
 
 export function sendTextDownload(reply: FastifyReply, path: string): FastifyReply
 {
+    return sendFileDownload(reply, path);
+}
+
+export function sendFileDownload(reply: FastifyReply, path: string): FastifyReply
+{
     const name = basename(path);
     const encoded = encodeURIComponent(name);
+    const extension = name.toLowerCase().endsWith(".epub") ? "application/epub+zip" : "text/plain; charset=utf-8";
 
-    reply.header("content-type", "text/plain; charset=utf-8");
+    reply.header("content-type", extension);
     reply.header("content-disposition", `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`);
 
     return reply.send(createReadStream(path));

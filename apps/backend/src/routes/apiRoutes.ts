@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AppConfig } from "../config.js";
 import type { JobService } from "../services/jobService.js";
 import type { LibraryService } from "../services/libraryService.js";
-import { assertInsideBase, sendTextDownload } from "../utils/file.js";
+import { assertInsideBase, sendFileDownload } from "../utils/file.js";
 
 interface ResolveBody
 {
@@ -17,6 +17,7 @@ interface DownloadBody
 {
     bookIdOrLink?: string;
     input?: string;
+    format?: "txt" | "epub";
 }
 
 interface RouteParams
@@ -61,13 +62,14 @@ export async function registerApiRoutes(
     app.post<{ Body: DownloadBody }>("/api/jobs/download", async (request) =>
     {
         const input = request.body.input?.trim() || request.body.bookIdOrLink?.trim();
+        const format = request.body.format === "epub" ? "epub" : "txt";
 
         if (!input)
         {
             throw new Error("Vui lòng nhập ID hoặc link truyện");
         }
 
-        return jobService.createDownloadJob(input);
+        return jobService.createDownloadJob(input, format);
     });
 
     app.post<{ Params: RouteParams }>("/api/jobs/:id/translate", async (request) =>
@@ -145,7 +147,7 @@ export async function registerApiRoutes(
         }
 
         const safePath = assertInsideBase(config.dataDir, path);
-        return sendTextDownload(reply, safePath);
+        return sendFileDownload(reply, safePath);
     });
 
     app.get<{ Querystring: LibraryQuery }>("/api/library", async (request) => ({
@@ -166,7 +168,7 @@ export async function registerApiRoutes(
         }
 
         const safePath = assertInsideBase(config.dataDir, path);
-        return sendTextDownload(reply, safePath);
+        return sendFileDownload(reply, safePath);
     });
 
     app.post<{ Params: RouteParams }>("/api/library/:id/translate", async (request, reply) =>

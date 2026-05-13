@@ -1,27 +1,16 @@
 const BREAK_TAG_PATTERN = /<br\s*\/?>|<\/p\s*>|<\/div\s*>|<\/section\s*>|<\/h[1-6]\s*>/gi;
 const HTML_TAG_PATTERN = /<[^>]+>/g;
 const OPEN_P_PATTERN = /<p\b[^>]*>/gi;
+const HEADER_SEPARATOR = "========================================";
+const CHAPTER_SEPARATOR = "----------------------------------------";
 
 const ENTITY_MAP: Record<string, string> = {
     amp: "&",
     apos: "'",
-    bdquo: "„",
-    bull: "•",
     gt: ">",
-    hellip: "…",
-    ldquo: "“",
-    lsaquo: "‹",
-    lsquo: "‘",
     lt: "<",
-    mdash: "—",
     nbsp: " ",
-    ndash: "–",
-    quot: "\"",
-    rdquo: "”",
-    rsaquo: "›",
-    rsquo: "’",
-    sbquo: "‚",
-    shy: "\u00ad"
+    quot: "\""
 };
 
 export function decodeHtmlEntities(input: string): string
@@ -37,7 +26,7 @@ export function decodeHtmlEntities(input: string): string
             const codePoint = Number.parseInt(value, 16);
             return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : _;
         })
-        .replace(/&([a-z]+);/gi, (_, name: string) => ENTITY_MAP[name] ?? _);
+        .replace(/&([a-z]+);/gi, (_, name: string) => ENTITY_MAP[name.toLowerCase()] ?? _);
 }
 
 export function cleanPlainText(raw: string, title: string): string
@@ -86,32 +75,102 @@ export function cleanPlainText(raw: string, title: string): string
         .join("\n");
 }
 
-export function composeBookText(title: string, author: string | undefined, chapters: readonly {
-    content: string;
-    title: string;
-}[]): string
+export function composeNovelText(
+    bookId: string,
+    title: string,
+    author: string | undefined,
+    description: string | undefined,
+    tags: readonly string[],
+    chapters: readonly { content: string; title: string }[],
+    translated: boolean
+): string
 {
-    const parts: string[] = [title];
+    const parts: string[] = [
+        `book_id=${bookId}`,
+        `书名: ${translated ? `${title} - Bản dịch` : title}`,
+        `作者: ${author ?? ""}`,
+        `标签: ${tags.join(", ")}`,
+        "简介:"
+    ];
 
-    if (author)
+    if (description?.trim())
     {
-        parts.push(`Tác giả: ${author}`);
+        parts.push(...description.trim().split(/\r?\n/));
     }
+
+    parts.push(HEADER_SEPARATOR);
 
     for (const chapter of chapters)
     {
-        parts.push("");
-        parts.push(chapter.title);
-        parts.push("");
-        parts.push(chapter.content.trim());
+        parts.push(chapter.title.trim());
+        parts.push(CHAPTER_SEPARATOR);
+        parts.push(chapter.content.trimEnd());
     }
 
     return `${parts.join("\n")}\n`;
 }
 
+export function textToXhtmlFragment(content: string): string
+{
+    const normalized = content
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .trim();
+
+    if (!normalized)
+    {
+        return "<p class=\"no-indent\"></p>";
+    }
+
+    const paragraphs: string[] = [];
+
+    for (const block of normalized.split(/\n{2,}/))
+    {
+        const lines = block
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        if (lines.length === 0)
+        {
+            continue;
+        }
+
+        const escaped = lines.map((line) => escapeHtml(line)).join("<br/>");
+        paragraphs.push(`<p>${escaped}</p>`);
+    }
+
+    return paragraphs.length > 0 ? paragraphs.join("\n") : `<p>${escapeHtml(normalized)}</p>`;
+}
+
+export function buildDescriptionHtml(description: string): string
+{
+    const normalized = description.trim();
+
+    if (!normalized)
+    {
+        return "<p class=\"no-indent\"></p>";
+    }
+
+    return normalized
+        .split(/\r?\n/)
+        .map((line) => (line.trim() ? `<p>${escapeHtml(line.trim())}</p>` : "<p></p>"))
+        .join("\n");
+}
+
+function escapeHtml(input: string): string
+{
+    return input
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+}
+
 function normalizeTitle(input: string): string
 {
     return input
-        .replace(/[\s　：:，,。！!？?、]/g, "")
+        .replace(/[\s　：:，,。？！!、]/g, "")
         .toLowerCase();
 }

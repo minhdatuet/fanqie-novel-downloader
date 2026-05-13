@@ -1,4 +1,4 @@
-import type { DownloadPlan, JobRecord, LibraryItem } from "./types";
+import type { DownloadFormat, DownloadPlan, JobRecord, LibraryItem } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -30,10 +30,13 @@ export function resolveBook(input: string): Promise<DownloadPlan>
     });
 }
 
-export function startDownload(input: string): Promise<JobRecord>
+export function startDownload(input: string, format: DownloadFormat): Promise<JobRecord>
 {
     return requestJson<JobRecord>("/api/jobs/download", {
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({
+            format,
+            input
+        }),
         method: "POST"
     });
 }

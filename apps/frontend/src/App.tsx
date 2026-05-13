@@ -11,7 +11,7 @@ import {
     startTranslate,
     subscribeJob
 } from "./api";
-import type { BookInfo, DownloadPlan, JobRecord, LibraryItem } from "./types";
+import type { BookInfo, DownloadFormat, DownloadPlan, JobRecord, LibraryItem } from "./types";
 
 const LIBRARY_PAGE_SIZE = 20;
 
@@ -22,6 +22,7 @@ export function App(): React.JSX.Element
 {
     const [input, setInput] = useState("");
     const [plan, setPlan] = useState<DownloadPlan>();
+    const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>("txt");
     const [downloadJob, setDownloadJob] = useState<JobRecord>();
     const [translateJob, setTranslateJob] = useState<JobRecord>();
     const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
@@ -130,7 +131,7 @@ export function App(): React.JSX.Element
         await runAction("download", async () =>
         {
             setTranslateJob(undefined);
-            setDownloadJob(await startDownload(input));
+            setDownloadJob(await startDownload(input, downloadFormat));
         });
     }
 
@@ -280,6 +281,17 @@ export function App(): React.JSX.Element
                             {busy === "resolve" ? "Đang kiểm tra" : "Kiểm tra"}
                         </button>
                     </div>
+                    <div className="format-row">
+                        <label htmlFor="download-format">Định dạng tải</label>
+                        <select
+                            id="download-format"
+                            onChange={(event) => setDownloadFormat(event.target.value as DownloadFormat)}
+                            value={downloadFormat}
+                        >
+                            <option value="txt">TXT</option>
+                            <option value="epub">EPUB</option>
+                        </select>
+                    </div>
                     {error && <p className="error-box">{error}</p>}
                 </form>
             </section>
@@ -305,7 +317,7 @@ export function App(): React.JSX.Element
 
                         {canDownload && (
                             <button className="primary-action" onClick={handleDownload}>
-                                Tải truyện tiếng Trung
+                                {`Tải truyện ${downloadFormat.toUpperCase()}`}
                             </button>
                         )}
 
@@ -314,7 +326,7 @@ export function App(): React.JSX.Element
                         {downloadJob?.status === "completed" && (
                             <div className="result-actions">
                                 <a className="download-link" href={jobFileUrl(downloadJob.id, "original")}>
-                                    Tải file tiếng Trung
+                                    {`Tải file tiếng Trung (${formatLabel(downloadJob.outputFormat ?? downloadFormat)})`}
                                 </a>
                                 {canTranslate && (
                                     <button className="secondary-action" onClick={handleTranslate}>
@@ -328,7 +340,7 @@ export function App(): React.JSX.Element
                         {translateJob && <ProgressBlock job={translateJob} title="Dịch sang tiếng Việt" />}
                         {translateJob?.status === "completed" && (
                             <a className="download-link vi" href={jobFileUrl(translateJob.id, "translated")}>
-                                Tải file tiếng Việt
+                                {`Tải file tiếng Việt (${formatLabel(translateJob.outputFormat ?? downloadFormat)})`}
                             </a>
                         )}
                         {isTranslating && <p className="helper-text">Đang dịch, giữ trang mở để theo dõi tiến độ.</p>}
@@ -477,7 +489,7 @@ function LibraryPanel({
                                 <td>
                                     {item.hasOriginal ? (
                                         <a className="table-link" href={libraryFileUrl(item.bookId, "original")}>
-                                            Tải bản Trung
+                                            {`Tải bản Trung (${formatLabelFromPath(item.originalPath)})`}
                                         </a>
                                     ) : (
                                         <span className="muted-text">Chưa có</span>
@@ -486,7 +498,7 @@ function LibraryPanel({
                                 <td>
                                     {item.hasTranslated ? (
                                         <a className="table-link vi" href={libraryFileUrl(item.bookId, "translated")}>
-                                            Tải bản Việt
+                                            {`Tải bản Việt (${formatLabelFromPath(item.translatedPath)})`}
                                         </a>
                                     ) : (
                                         <button
@@ -615,4 +627,19 @@ function parseBookId(input: string): string | undefined
 
     const target = trimmed.match(/https?:\/\/\S+/i)?.[0] ?? trimmed;
     return target.match(/(?:book_id|bookId)=([0-9]+)/i)?.[1] ?? target.match(/\/page\/(\d+)/)?.[1];
+}
+
+function formatLabel(format: DownloadFormat): string
+{
+    return format.toUpperCase();
+}
+
+function formatLabelFromPath(path?: string): string
+{
+    if (!path)
+    {
+        return "TXT";
+    }
+
+    return path.toLowerCase().endsWith(".epub") ? "EPUB" : "TXT";
 }

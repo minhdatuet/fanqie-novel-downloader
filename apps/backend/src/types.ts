@@ -1,3 +1,5 @@
+export type DownloadFormat = "txt" | "epub";
+
 export type JobKind = "download" | "translate";
 
 export type JobStatus = "queued" | "running" | "completed" | "failed";
@@ -38,7 +40,10 @@ export interface ProgressState
 export interface JobFileSet
 {
     chaptersJson?: string;
+    metaJson?: string;
+    originalEpub?: string;
     originalTxt?: string;
+    translatedEpub?: string;
     translatedTxt?: string;
 }
 
@@ -50,6 +55,7 @@ export interface JobRecord
     files: JobFileSet;
     id: string;
     kind: JobKind;
+    outputFormat?: DownloadFormat;
     progress: ProgressState;
     sourceJobId?: string;
     status: JobStatus;

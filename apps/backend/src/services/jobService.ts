@@ -1,15 +1,24 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, parse, resolve } from "node:path";
 
 import type { AppConfig } from "../config.js";
-import type { DownloadPlan, JobRecord, ProgressState, StoredChapter } from "../types.js";
-import { composeBookText } from "../utils/text.js";
+import type { BookInfo, DownloadFormat, DownloadPlan, JobRecord, ProgressState, StoredChapter } from "../types.js";
+import { buildEpubBuffer } from "../utils/epub.js";
+import { composeNovelText } from "../utils/text.js";
 import { readJsonFile, readTextFile, sanitizeFileName, writeJsonFile, writeTextFile } from "../utils/file.js";
 import { FanqieService } from "./fanqieService.js";
 import { LegacyService } from "./legacyService.js";
 import { type LibraryItem, LibraryService } from "./libraryService.js";
 import { TranslatorService } from "./translatorService.js";
+
+interface ChapterProgress
+{
+    current: number;
+    message: string;
+    total: number;
+}
 
 export class JobService
 {
@@ -44,17 +53,17 @@ export class JobService
         return this.fanqie.preparePlan(input);
     }
 
-    public createDownloadJob(input: string): JobRecord
+    public createDownloadJob(input: string, format: DownloadFormat = "txt"): JobRecord
     {
-        const job = this.createJob("download");
+        const job = this.createJob("download", undefined, undefined, format);
 
         if (this.config.legacyBridgeEnabled)
         {
-            this.enqueueTask(() => this.runLegacyDownloadJob(job.id, input));
+            this.enqueueTask(() => this.runLegacyDownloadJob(job.id, input, format));
         }
         else
         {
-            this.enqueueTask(() => this.runDownloadJob(job.id, input));
+            this.enqueueTask(() => this.runDownloadJob(job.id, input, format));
         }
 
         return job;
@@ -69,13 +78,14 @@ export class JobService
             throw new Error("Job tải chưa hoàn tất");
         }
 
-        if (!source.files.chaptersJson && !source.files.originalTxt)
+        if (!source.files.chaptersJson && !source.files.originalTxt && !source.files.originalEpub)
         {
             throw new Error("Không tìm thấy file tiếng Trung để dịch");
         }
 
-        const job = this.createJob("translate", source.book, sourceJobId);
-        this.enqueueTask(() => this.runTranslateJob(job.id, source));
+        const outputFormat = source.outputFormat ?? inferFormatFromFiles(source.files);
+        const job = this.createJob("translate", source.book, sourceJobId, outputFormat);
+        this.enqueueTask(() => this.runTranslateJob(job.id, source, outputFormat));
         return job;
     }
 
@@ -86,21 +96,26 @@ export class JobService
             throw new Error("Truyện chưa có file tiếng Trung để dịch");
         }
 
+        const outputFormat = inferFormatFromPath(item.originalPath);
         const source: JobRecord = {
             book: this.library.toBookInfo(item),
             createdAt: new Date().toISOString(),
             files: {
-                originalTxt: item.originalPath,
-                translatedTxt: item.translatedPath
+                chaptersJson: deriveChaptersJsonPath(item.originalPath),
+                originalEpub: outputFormat === "epub" ? item.originalPath : undefined,
+                originalTxt: outputFormat === "txt" ? item.originalPath : undefined,
+                translatedEpub: item.translatedPath && outputFormat === "epub" ? item.translatedPath : undefined,
+                translatedTxt: item.translatedPath && outputFormat === "txt" ? item.translatedPath : undefined
             },
             id: `library:${item.bookId}`,
             kind: "download",
+            outputFormat,
             progress: progress(1, 1, "Đã có trong thư viện"),
             status: "completed",
             updatedAt: item.updatedAt
         };
-        const job = this.createJob("translate", source.book, source.id);
-        this.enqueueTask(() => this.runTranslateJob(job.id, source));
+        const job = this.createJob("translate", source.book, source.id, outputFormat);
+        this.enqueueTask(() => this.runTranslateJob(job.id, source, outputFormat));
         return job;
     }
 
@@ -117,7 +132,7 @@ export class JobService
         return () => this.events.off(eventName, listener);
     }
 
-    private async runDownloadJob(jobId: string, input: string): Promise<void>
+    private async runDownloadJob(jobId: string, input: string, format: DownloadFormat): Promise<void>
     {
         try
         {
@@ -138,24 +153,8 @@ export class JobService
                     progress: progress(state.current, state.total, state.message)
                 });
             });
-            const fileBase = sanitizeFileName(`${plan.book.bookId}_${plan.book.title}`);
-            const bookDir = resolve(this.config.dataDir, "books", plan.book.bookId);
-            const originalTxt = resolve(bookDir, `${fileBase}.zh.txt`);
-            const chaptersJson = resolve(bookDir, `${fileBase}.chapters.json`);
-            const content = composeBookText(plan.book.title, plan.book.author, chapters);
 
-            await writeTextFile(originalTxt, content);
-            await writeJsonFile(chaptersJson, chapters);
-            this.library.invalidate();
-
-            this.update(jobId, {
-                files: {
-                    chaptersJson,
-                    originalTxt
-                },
-                progress: progress(chapters.length, chapters.length, "Đã tải xong bản tiếng Trung"),
-                status: "completed"
-            });
+            await this.saveDownloadedBook(jobId, plan.book, chapters, format);
         }
         catch (error)
         {
@@ -163,7 +162,7 @@ export class JobService
         }
     }
 
-    private async runLegacyDownloadJob(jobId: string, input: string): Promise<void>
+    private async runLegacyDownloadJob(jobId: string, input: string, format: DownloadFormat): Promise<void>
     {
         try
         {
@@ -214,19 +213,13 @@ export class JobService
                             throw new Error("Đã tải xong nhưng không tìm thấy file TXT đầu ra");
                         }
 
-                        this.library.invalidate();
+                        const chapters = splitTextIntoChapters(await readTextFile(originalTxt));
+                        if (chapters.length === 0)
+                        {
+                            throw new Error("Không đọc được nội dung từ file TXT đầu ra");
+                        }
 
-                        this.update(jobId, {
-                            files: {
-                                originalTxt
-                            },
-                            progress: {
-                                ...this.legacy.mapProgress(current),
-                                message: "Đã tải xong bản tiếng Trung",
-                                percent: 100
-                            },
-                            status: "completed"
-                        });
+                        await this.saveDownloadedBook(jobId, plan.book, chapters, format);
                         return;
                     }
 
@@ -245,7 +238,7 @@ export class JobService
         }
     }
 
-    private async runTranslateJob(jobId: string, source: JobRecord): Promise<void>
+    private async runTranslateJob(jobId: string, source: JobRecord, outputFormat: DownloadFormat): Promise<void>
     {
         try
         {
@@ -299,18 +292,13 @@ export class JobService
                 }
             }
 
-            const fileBase = sanitizeFileName(`${source.book.bookId}_${source.book.title}`);
-            const translatedTxt = source.files.originalTxt
-                ? resolve(dirname(source.files.originalTxt), `${parse(source.files.originalTxt).name}_vi.txt`)
-                : resolve(this.config.dataDir, "books", source.book.bookId, `${fileBase}.vi.txt`);
-            const content = composeBookText(`${source.book.title} - Bản dịch`, source.book.author, translated);
-
-            await writeTextFile(translatedTxt, content);
+            const translatedPath = await this.saveTranslatedBook(source, translated, outputFormat);
             this.library.invalidate();
 
             this.update(jobId, {
                 files: {
-                    translatedTxt
+                    translatedEpub: outputFormat === "epub" ? translatedPath : undefined,
+                    translatedTxt: outputFormat === "txt" ? translatedPath : undefined
                 },
                 progress: progress(chapters.length, chapters.length, "Đã dịch xong tiếng Việt"),
                 status: "completed"
@@ -322,7 +310,132 @@ export class JobService
         }
     }
 
-    private createJob(kind: "download" | "translate", book?: JobRecord["book"], sourceJobId?: string): JobRecord
+    private async saveDownloadedBook(
+        jobId: string,
+        book: BookInfo,
+        chapters: readonly StoredChapter[],
+        format: DownloadFormat
+    ): Promise<void>
+    {
+        const fileBase = sanitizeFileName(`${book.bookId}_${book.title}`);
+        const bookDir = resolve(this.config.dataDir, "books", book.bookId);
+        const chaptersJson = resolve(bookDir, `${fileBase}.chapters.json`);
+        const metaJson = resolve(bookDir, `${fileBase}.meta.json`);
+        const originalTxt = format === "txt"
+            ? resolve(bookDir, `${fileBase}.zh.txt`)
+            : undefined;
+        const originalEpub = format === "epub"
+            ? resolve(bookDir, `${fileBase}.epub`)
+            : undefined;
+
+        await writeJsonFile(chaptersJson, chapters);
+        await writeJsonFile(metaJson, {
+            book,
+            format
+        });
+
+        if (format === "txt")
+        {
+            const content = composeNovelText(
+                book.bookId,
+                book.title,
+                book.author,
+                book.description,
+                book.tags,
+                chapters,
+                false
+            );
+
+            await writeTextFile(originalTxt as string, content);
+        }
+        else
+        {
+            const epub = await buildEpubBuffer(
+                {
+                    book,
+                    description: book.description,
+                    translated: false
+                },
+                chapters
+            );
+
+            await writeBinaryFile(originalEpub as string, epub);
+        }
+
+        this.library.invalidate();
+
+        this.update(jobId, {
+            files: {
+                chaptersJson,
+                metaJson,
+                originalEpub,
+                originalTxt
+            },
+            outputFormat: format,
+            progress: progress(chapters.length, chapters.length, "Đã tải xong bản tiếng Trung"),
+            status: "completed"
+        });
+    }
+
+    private async saveTranslatedBook(
+        source: JobRecord,
+        chapters: readonly StoredChapter[],
+        format: DownloadFormat
+    ): Promise<string>
+    {
+        if (!source.book)
+        {
+            throw new Error("Thiếu thông tin truyện để lưu bản dịch");
+        }
+
+        const baseDir = source.files.originalTxt
+            ? dirname(source.files.originalTxt)
+            : source.files.originalEpub
+                ? dirname(source.files.originalEpub)
+                : resolve(this.config.dataDir, "books", source.book.bookId);
+        const baseName = source.files.originalTxt
+            ? parse(source.files.originalTxt).name
+            : source.files.originalEpub
+                ? parse(source.files.originalEpub).name
+                : sanitizeFileName(`${source.book.bookId}_${source.book.title}`);
+
+        if (format === "txt")
+        {
+            const target = resolve(baseDir, `${baseName}_vi.txt`);
+            const content = composeNovelText(
+                source.book.bookId,
+                source.book.title,
+                source.book.author,
+                source.book.description,
+                source.book.tags,
+                chapters,
+                true
+            );
+
+            await writeTextFile(target, content);
+            return target;
+        }
+
+        const target = resolve(baseDir, `${baseName}_vi.epub`);
+        const epub = await buildEpubBuffer(
+            {
+                book: source.book,
+                description: source.book.description,
+                translated: true
+            },
+            chapters
+        );
+
+        await writeBinaryFile(target, epub);
+        return target;
+    }
+
+    private createJob(
+        kind: "download" | "translate",
+        book?: JobRecord["book"],
+        sourceJobId?: string,
+        outputFormat?: DownloadFormat
+    ): JobRecord
     {
         const now = new Date().toISOString();
         const job: JobRecord = {
@@ -331,6 +444,7 @@ export class JobService
             files: {},
             id: randomUUID(),
             kind,
+            outputFormat,
             progress: progress(0, 1, "Đang xếp hàng"),
             sourceJobId,
             status: "queued",
@@ -389,13 +503,18 @@ export class JobService
             return readJsonFile<StoredChapter[]>(source.files.chaptersJson);
         }
 
-        if (!source.files.originalTxt)
+        if (source.files.originalTxt)
         {
-            throw new Error("Không tìm thấy file tiếng Trung để dịch");
+            const raw = await readTextFile(source.files.originalTxt);
+            return splitTextIntoChapters(raw);
         }
 
-        const raw = await readTextFile(source.files.originalTxt);
-        return splitTextIntoChapters(raw);
+        if (source.files.originalEpub)
+        {
+            throw new Error("Chưa hỗ trợ đọc trực tiếp từ EPUB đã lưu");
+        }
+
+        throw new Error("Không tìm thấy file tiếng Trung để dịch");
     }
 
     private enqueueTask(task: () => Promise<void>): void
@@ -442,12 +561,12 @@ function progress(current: number, total: number, message: string): ProgressStat
 
 function splitTextIntoChapters(content: string): StoredChapter[]
 {
-    const separator = "----------------------------------------";
     const headerSeparator = "=".repeat(40);
+    const chapterSeparator = "-".repeat(40);
     const bodyStart = content.indexOf(headerSeparator);
     const body = bodyStart >= 0 ? content.slice(bodyStart + headerSeparator.length) : content;
     const blocks = body
-        .split(separator)
+        .split(chapterSeparator)
         .map((block) => block.trim())
         .filter(Boolean);
     const sourceBlocks = blocks.length > 1 ? blocks : body.split(/\n(?=第.{1,12}[章节回])/g);
@@ -460,15 +579,41 @@ function splitTextIntoChapters(content: string): StoredChapter[]
                 .map((line) => line.trim())
                 .filter(Boolean);
             const title = lines[0] || `Chương ${index + 1}`;
-            const body = lines.slice(1).join("\n\n") || block;
+            const bodyText = lines.slice(1).join("\n\n") || block;
 
             return {
-                content: body,
+                content: bodyText,
                 id: String(index + 1),
                 title
             };
         })
         .filter((chapter) => chapter.content.trim().length > 0);
+}
+
+function inferFormatFromFiles(files: JobRecord["files"]): DownloadFormat
+{
+    if (files.originalEpub || files.translatedEpub)
+    {
+        return "epub";
+    }
+
+    return "txt";
+}
+
+function inferFormatFromPath(path: string): DownloadFormat
+{
+    return path.toLowerCase().endsWith(".epub") ? "epub" : "txt";
+}
+
+function writeBinaryFile(path: string, data: Buffer): Promise<void>
+{
+    return mkdir(dirname(path), { recursive: true }).then(() => writeFile(path, data));
+}
+
+function deriveChaptersJsonPath(path: string): string
+{
+    const fileName = parse(path).name.replace(/(\.zh|\.vi)$/i, "");
+    return resolve(dirname(path), `${fileName}.chapters.json`);
 }
 
 function sleep(ms: number): Promise<void>
