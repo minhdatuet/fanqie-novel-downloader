@@ -79,3 +79,4 @@ npm start
 ```
 
 Sau build, backend phục vụ luôn frontend từ `apps/frontend/dist`.
+Nếu bạn tách frontend ra chạy riêng trên Vite hoặc Nginx, hãy đặt `VITE_API_BASE_URL` trỏ đúng về backend thay vì để `localhost`.
