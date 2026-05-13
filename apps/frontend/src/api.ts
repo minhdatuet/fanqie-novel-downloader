@@ -4,9 +4,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T>
 {
+    const hasBody = init?.body !== undefined;
     const response = await fetch(`${API_BASE_URL}${path}`, {
         headers: {
-            "content-type": "application/json",
+            ...(hasBody ? { "content-type": "application/json" } : {}),
             ...init?.headers
         },
         ...init
