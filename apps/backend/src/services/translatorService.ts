@@ -1,7 +1,4 @@
 import type { AppConfig } from "../config.js";
-
-const MAX_PARAGRAPHS_PER_BATCH = 20;
-const MAX_BATCH_CHARACTERS = 3500;
 const BATCH_SEPARATOR = "=|==|=";
 
 export class TranslatorService
@@ -39,6 +36,12 @@ export class TranslatorService
 
         const translatedParagraphs = await translateParagraphs(
             paragraphs,
+            {
+                batchPauseMs: this.config.translationParagraphBatchPauseMs,
+                batchSize: this.config.translationParagraphBatchSize,
+                maxBatchCharacters: this.config.translationMaxBatchCharacters,
+                singleParagraphPauseMs: this.config.translationSingleParagraphPauseMs
+            },
             async (value) => this.translateByStv(value)
         );
 
@@ -88,19 +91,25 @@ export class TranslatorService
 
 async function translateParagraphs(
     paragraphs: string[],
+    options: {
+        batchPauseMs: number;
+        batchSize: number;
+        maxBatchCharacters: number;
+        singleParagraphPauseMs: number;
+    },
     translate: (text: string) => Promise<string>
 ): Promise<string[]>
 {
     const output: string[] = [];
 
-    for (let index = 0; index < paragraphs.length; index += MAX_PARAGRAPHS_PER_BATCH)
+    for (let index = 0; index < paragraphs.length; index += options.batchSize)
     {
-        const batch = paragraphs.slice(index, index + MAX_PARAGRAPHS_PER_BATCH);
-        output.push(...await translateBatch(batch, translate));
+        const batch = paragraphs.slice(index, index + options.batchSize);
+        output.push(...await translateBatch(batch, options, translate));
 
-        if (index + MAX_PARAGRAPHS_PER_BATCH < paragraphs.length)
+        if (options.batchPauseMs > 0 && index + options.batchSize < paragraphs.length)
         {
-            await sleep(200);
+            await sleep(options.batchPauseMs);
         }
     }
 
@@ -109,6 +118,10 @@ async function translateParagraphs(
 
 async function translateBatch(
     batch: string[],
+    options: {
+        maxBatchCharacters: number;
+        singleParagraphPauseMs: number;
+    },
     translate: (text: string) => Promise<string>
 ): Promise<string[]>
 {
@@ -134,7 +147,10 @@ async function translateBatch(
         return output;
     }
 
-    if (getTotalLength(translatedParagraphs) > MAX_BATCH_CHARACTERS || translatedParagraphs.length === 1)
+    if (
+        getTotalLength(translatedParagraphs) > options.maxBatchCharacters
+        || translatedParagraphs.length === 1
+    )
     {
         for (let index = 0; index < translatedParagraphs.length; index += 1)
         {
@@ -151,9 +167,9 @@ async function translateBatch(
                 }
             }
 
-            if (index + 1 < translatedParagraphs.length)
+            if (options.singleParagraphPauseMs > 0 && index + 1 < translatedParagraphs.length)
             {
-                await sleep(80);
+                await sleep(options.singleParagraphPauseMs);
             }
         }
 

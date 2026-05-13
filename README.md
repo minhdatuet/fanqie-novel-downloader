@@ -48,11 +48,17 @@ npm run legacy:start
 
 - `JOB_CONCURRENCY`: số job tải/dịch chạy song song ở backend mới. Mặc định `4` để chịu nhiều user mà không mở
   quá nhiều job nặng.
-- `TRANSLATION_CONCURRENCY`: số chương dịch song song trong một job dịch. Mặc định `8`, gần với kiểu batch song song
-  của project gốc và nhanh hơn dịch tuần tự.
-- `LEGACY_MAX_WORKERS`: số worker tải nội bộ của exe gốc. Mặc định `8`; tăng lên `10-12` nếu máy/mạng khỏe,
+- `TRANSLATION_CONCURRENCY`: số chương dịch song song trong một job dịch. Mặc định `12`; tăng lên `16` nếu máy
+  khỏe và STV chưa bị throttle.
+- `TRANSLATION_BATCH_PAUSE_MS`: độ trễ giữa các batch chương. Mặc định `0` để không tự tạo thêm chờ.
+- `TRANSLATION_MAX_BATCH_CHARACTERS`: giới hạn ký tự tối đa cho một batch paragraph trước khi rơi về dịch từng đoạn.
+  Mặc định `8000`; tăng nếu STV trả lời ổn định.
+- `TRANSLATION_PARAGRAPH_BATCH_SIZE`: số paragraph gộp trong một request dịch. Mặc định `20`.
+- `TRANSLATION_PARAGRAPH_BATCH_PAUSE_MS`: độ trễ giữa các batch paragraph. Mặc định `200` để giảm nguy cơ throttle.
+- `TRANSLATION_SINGLE_PARAGRAPH_PAUSE_MS`: độ trễ giữa các lần dịch paragraph khi phải fallback từng đoạn. Mặc định `80`.
+- `LEGACY_MAX_WORKERS`: số worker tải nội bộ của exe gốc. Mặc định `12`; tăng lên `10-16` nếu máy/mạng khỏe,
   giảm nếu bị timeout hoặc throttle.
-- `MAX_WORKERS`: số worker cho downloader TypeScript fallback khi không dùng legacy bridge.
+- `MAX_WORKERS`: số worker cho downloader TypeScript fallback khi không dùng legacy bridge. Mặc định `12`.
 - `LEGACY_BRIDGE`: mặc định `true`; backend mới dùng exe gốc ở port `LEGACY_PORT`.
 - `LEGACY_EXE_PATH` hoặc `LEGACY_EXE_SOURCE`: đường dẫn exe gốc.
 - `LEGACY_PORT`: port backend exe gốc cho bridge, mặc định `18424`.

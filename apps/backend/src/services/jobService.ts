@@ -286,9 +286,9 @@ export class JobService
                     });
                 }));
 
-                if (batchEnd < chapters.length)
+                if (batchEnd < chapters.length && this.config.translationBatchPauseMs > 0)
                 {
-                    await sleep(250);
+                    await sleep(this.config.translationBatchPauseMs);
                 }
             }
 
