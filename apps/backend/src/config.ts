@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 
@@ -90,18 +91,20 @@ export function loadConfig(): AppConfig
         ?? "D:\\Novel\\Fanqie\\Tomato-Novel-Downloader\\config.yml";
     const legacyExeSource = process.env.LEGACY_EXE_SOURCE
         ?? "D:\\Novel\\Fanqie\\Tomato-Novel-Downloader\\TomatoNovelDownloader-Win64.exe";
+    const legacyExePath = process.env.LEGACY_EXE_PATH
+        ? resolveFromRoot(process.env.LEGACY_EXE_PATH)
+        : legacyExeSource;
+    const legacyBridgeRequested = readBoolean("LEGACY_BRIDGE", true);
 
     return {
         dataDir: resolveFromRoot(process.env.DATA_DIR ?? "./storage"),
         fanqieApiEndpoints: readEndpoints(),
         host: process.env.HOST ?? "0.0.0.0",
         jobConcurrency: Math.max(1, readNumber("JOB_CONCURRENCY", 4)),
-        legacyBridgeEnabled: readBoolean("LEGACY_BRIDGE", true),
+        legacyBridgeEnabled: legacyBridgeRequested && existsSync(legacyExePath),
         legacyConfigSource,
         legacyDataDir: resolveFromRoot(process.env.LEGACY_DATA_DIR ?? "./storage/legacy"),
-        legacyExePath: process.env.LEGACY_EXE_PATH
-            ? resolveFromRoot(process.env.LEGACY_EXE_PATH)
-            : legacyExeSource,
+        legacyExePath,
         legacyHost: process.env.LEGACY_HOST ?? "127.0.0.1",
         legacyMaxWorkers: Math.max(1, readNumber("LEGACY_MAX_WORKERS", readNumber("MAX_WORKERS", 8))),
         legacyPort: readNumber("LEGACY_PORT", 18424),
