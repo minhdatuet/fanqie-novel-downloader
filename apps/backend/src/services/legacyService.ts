@@ -56,10 +56,12 @@ interface LocatedTextFile
 
 interface LegacyConfigPatch
 {
+    apiEndpoints: string[];
     maxRetries: number;
     maxWorkers: number;
     requestTimeoutSeconds: number;
     savePath: string;
+    useOfficialApi: boolean;
 }
 
 export class LegacyService
@@ -257,10 +259,12 @@ export class LegacyService
         }
 
         await ensureLegacyConfig(targetConfig, {
+            apiEndpoints: this.config.fanqieApiEndpoints,
             maxRetries: this.config.maxRetries,
             maxWorkers: this.config.legacyMaxWorkers,
             requestTimeoutSeconds: Math.max(1, Math.ceil(this.config.requestTimeoutMs / 1000)),
-            savePath: resolve(this.config.dataDir, "books")
+            savePath: resolve(this.config.dataDir, "books"),
+            useOfficialApi: this.config.fanqieApiEndpoints.length === 0
         });
     }
 
@@ -403,6 +407,12 @@ async function ensureLegacyConfig(configPath: string, patch: LegacyConfigPatch):
     next = setYamlValue(next, "bulk_files", "false");
     next = setYamlValue(next, "enable_audiobook", "false");
     next = setYamlValue(next, "auto_open_downloaded_files", "false");
+    next = setYamlValue(next, "use_official_api", patch.useOfficialApi ? "true" : "false");
+
+    if (!patch.useOfficialApi && patch.apiEndpoints.length > 0)
+    {
+        next = setYamlList(next, "api_endpoints", patch.apiEndpoints);
+    }
 
     if (next !== raw)
     {
@@ -425,6 +435,20 @@ function setYamlValue(raw: string, key: string, value: string): string
 function quoteYamlString(value: string): string
 {
     return `'${value.replace(/'/g, "''")}'`;
+}
+
+function setYamlList(raw: string, key: string, values: string[]): string
+{
+    const blockPattern = new RegExp(`^${escapeRegExp(key)}:\\s*(?:\\n(?:\\s+-.*\\n?)*)?`, "m");
+    const serializedValues = values.map((value) => `  - ${value}`).join("\n");
+    const block = `${key}:\n${serializedValues}`;
+
+    if (blockPattern.test(raw))
+    {
+        return raw.replace(blockPattern, block);
+    }
+
+    return `${raw.trimEnd()}\n${block}\n`;
 }
 
 function escapeRegExp(value: string): string

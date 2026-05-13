@@ -9,11 +9,13 @@ import { assertInsideBase, sendTextDownload } from "../utils/file.js";
 
 interface ResolveBody
 {
+    bookIdOrLink?: string;
     input?: string;
 }
 
 interface DownloadBody
 {
+    bookIdOrLink?: string;
     input?: string;
 }
 
@@ -46,7 +48,7 @@ export async function registerApiRoutes(
 
     app.post<{ Body: ResolveBody }>("/api/books/resolve", async (request) =>
     {
-        const input = request.body.input?.trim();
+        const input = request.body.input?.trim() || request.body.bookIdOrLink?.trim();
 
         if (!input)
         {
@@ -58,7 +60,7 @@ export async function registerApiRoutes(
 
     app.post<{ Body: DownloadBody }>("/api/jobs/download", async (request) =>
     {
-        const input = request.body.input?.trim();
+        const input = request.body.input?.trim() || request.body.bookIdOrLink?.trim();
 
         if (!input)
         {
