@@ -9,10 +9,13 @@ export interface LibraryItem
 {
     author?: string;
     bookId: string;
+    coverUrl?: string;
+    description?: string;
     hasOriginal: boolean;
     hasTranslated: boolean;
     originalPath?: string;
     relativeDir: string;
+    tags: string[];
     title: string;
     translatedPath?: string;
     updatedAt: string;
@@ -34,6 +37,15 @@ interface BookMeta
 {
     book?: BookInfo;
     format?: string;
+}
+
+interface ReadBookMetaResult
+{
+    author?: string;
+    coverUrl?: string;
+    description?: string;
+    tags?: string[];
+    title: string;
 }
 
 export class LibraryService
@@ -82,7 +94,9 @@ export class LibraryService
             author: item.author,
             bookId: item.bookId,
             chapterCount: 0,
-            tags: [],
+            coverUrl: item.coverUrl,
+            description: item.description,
+            tags: item.tags,
             title: item.title
         };
     }
@@ -157,10 +171,13 @@ export class LibraryService
             items.push({
                 author: meta.author,
                 bookId,
+                coverUrl: meta.coverUrl,
+                description: meta.description,
                 hasOriginal: Boolean(original),
                 hasTranslated: Boolean(translatedFile),
                 originalPath: original?.path,
                 relativeDir: relative(root, dirname(basis.path)).replace(/\\/g, "/"),
+                tags: meta.tags ?? [],
                 title: meta.title,
                 translatedPath: translatedFile?.path,
                 updatedAt: new Date(updatedMs).toISOString()
@@ -210,7 +227,7 @@ async function findBookFiles(dir: string): Promise<BookCandidate[]>
     return out;
 }
 
-async function readBookMeta(path: string, fallbackBookId: string): Promise<{ author?: string; title: string }>
+async function readBookMeta(path: string, fallbackBookId: string): Promise<ReadBookMetaResult>
 {
     const meta = await readMetaFile(path);
 
@@ -218,6 +235,9 @@ async function readBookMeta(path: string, fallbackBookId: string): Promise<{ aut
     {
         return {
             author: meta.book.author,
+            coverUrl: meta.book.coverUrl,
+            description: meta.book.description,
+            tags: meta.book.tags,
             title: meta.book.title
         };
     }
