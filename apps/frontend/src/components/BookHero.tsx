@@ -63,7 +63,7 @@ export function BookHero({ book }: BookHeroProps) {
             </div>
 
             {book.description && (
-              <p className="text-muted-foreground line-clamp-3 md:line-clamp-4 leading-relaxed">
+              <p className="whitespace-pre-line text-muted-foreground leading-relaxed">
                 {book.description}
               </p>
             )}
