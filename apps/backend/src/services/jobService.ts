@@ -1,13 +1,15 @@
 import { existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, parse, resolve } from "node:path";
+
+import JSZip from "jszip";
 
 import type { AppConfig } from "../config.js";
 import type { BookInfo, DownloadFormat, DownloadPlan, JobRecord, ProgressState, StoredChapter } from "../types.js";
 import { buildEpubBuffer } from "../utils/epub.js";
-import { composeNovelText } from "../utils/text.js";
+import { cleanPlainText, composeNovelText } from "../utils/text.js";
 import { readJsonFile, readTextFile, sanitizeFileName, writeJsonFile, writeTextFile } from "../utils/file.js";
 import { FanqieService } from "./fanqieService.js";
 import { LegacyService } from "./legacyService.js";
@@ -874,6 +876,11 @@ async function loadArtifactChaptersAsync(
         return splitTextIntoChapters(raw);
     }
 
+    if (sourcePath.toLowerCase().endsWith(".epub"))
+    {
+        return readChaptersFromEpubAsync(sourcePath);
+    }
+
     throw new Error("Không tìm thấy file chương để dựng lại định dạng");
 }
 
@@ -894,6 +901,44 @@ async function loadArtifactBookAsync(
     }
 
     return fallbackBook ?? readBookInfoFromFileName(sourcePath);
+}
+
+async function readChaptersFromEpubAsync(path: string): Promise<StoredChapter[]>
+{
+    const buffer = await readFile(path);
+    const zip = await JSZip.loadAsync(buffer);
+    const chapterFiles = Object.keys(zip.files)
+        .filter((fileName) => /(?:^|\/)chapter_\d+\.xhtml$/i.test(fileName))
+        .sort((left, right) => left.localeCompare(right));
+
+    const chapters: StoredChapter[] = [];
+
+    for (const [index, fileName] of chapterFiles.entries())
+    {
+        const entry = zip.file(fileName);
+
+        if (!entry)
+        {
+            continue;
+        }
+
+        const html = await entry.async("string");
+        const title = extractChapterTitleFromHtml(html) ?? `Chương ${index + 1}`;
+        const content = cleanPlainText(html, title).trim();
+
+        chapters.push({
+            content,
+            id: String(index + 1),
+            title
+        });
+    }
+
+    if (chapters.length === 0)
+    {
+        throw new Error("Không tìm thấy chương trong EPUB");
+    }
+
+    return chapters;
 }
 
 function readBookInfoFromFileName(path: string): BookInfo | undefined
@@ -930,6 +975,12 @@ function getArtifactFileName(baseName: string, translated: boolean, format: Down
     }
 
     return format === "epub" ? `${baseName}.epub` : `${baseName}.zh.txt`;
+}
+
+function extractChapterTitleFromHtml(html: string): string | undefined
+{
+    return html.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim()
+        ?? html.match(/<h1[^>]*>([^<]+)<\/h1>/i)?.[1]?.trim();
 }
 
 function progress(current: number, total: number, message: string): ProgressState
