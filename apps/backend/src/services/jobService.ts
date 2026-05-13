@@ -82,17 +82,17 @@ export class JobService
         await this.legacy.warmUpAsync();
     }
 
-    public createDownloadJob(input: string, format: DownloadFormat = "txt"): JobRecord
+    public createDownloadJob(input: string): JobRecord
     {
-        const job = this.createJob("download", undefined, undefined, format);
+        const job = this.createJob("download", undefined, undefined, "txt");
 
         if (this.config.legacyBridgeEnabled)
         {
-            this.enqueueTask(() => this.runLegacyDownloadJob(job.id, input, format));
+            this.enqueueTask(() => this.runLegacyDownloadJob(job.id, input));
         }
         else
         {
-            this.enqueueTask(() => this.runDownloadJob(job.id, input, format));
+            this.enqueueTask(() => this.runDownloadJob(job.id, input));
         }
 
         return job;
@@ -226,7 +226,7 @@ export class JobService
         return () => this.events.off(eventName, listener);
     }
 
-    private async runDownloadJob(jobId: string, input: string, format: DownloadFormat): Promise<void>
+    private async runDownloadJob(jobId: string, input: string): Promise<void>
     {
         try
         {
@@ -236,24 +236,23 @@ export class JobService
             });
 
             const plan = await this.fanqie.preparePlan(input);
-            const translatedBook = await this.translateBookMetadataAsync(plan.book);
             this.update(jobId, {
-                book: translatedBook,
-                progress: progress(0, plan.chapters.length, "Đã lấy thông tin, bắt đầu tải chương")
+                book: plan.book,
+                progress: progress(0, plan.chapters.length, "Đã lấy thông tin, bắt đầu tải bản gốc")
             });
 
-            const translatedPlan = {
+            const originalPlan = {
                 ...plan,
-                book: translatedBook
+                book: plan.book
             };
-            const chapters = await this.fanqie.downloadPlan(translatedPlan, (state) =>
+            const chapters = await this.fanqie.downloadPlan(originalPlan, (state) =>
             {
                 this.update(jobId, {
                     progress: progress(state.current, state.total, state.message)
                 });
             });
 
-            await this.saveDownloadedBook(jobId, translatedBook, chapters, format);
+            await this.saveDownloadedBook(jobId, plan.book, chapters);
         }
         catch (error)
         {
@@ -261,7 +260,7 @@ export class JobService
         }
     }
 
-    private async runLegacyDownloadJob(jobId: string, input: string, format: DownloadFormat): Promise<void>
+    private async runLegacyDownloadJob(jobId: string, input: string): Promise<void>
     {
         try
         {
@@ -271,9 +270,8 @@ export class JobService
             });
 
             const plan = await this.legacy.resolveBook(input);
-            const translatedBook = await this.translateBookMetadataAsync(plan.book);
             this.update(jobId, {
-                book: translatedBook,
+                book: plan.book,
                 progress: progress(0, plan.book.chapterCount || 1, "Đã lấy thông tin truyện")
             });
 
@@ -294,8 +292,8 @@ export class JobService
                     {
                         this.update(jobId, {
                             book: {
-                                ...translatedBook,
-                                author: current.author ?? plan.book.author,
+                                ...plan.book,
+                                author: current.author ?? plan.book.author
                             }
                         });
                     }
@@ -304,7 +302,7 @@ export class JobService
                     {
                         const originalTxt = await this.legacy.findOutputTxt(
                             current.book_id,
-                            translatedBook.title
+                            plan.book.title
                         );
 
                         if (!originalTxt)
@@ -318,7 +316,7 @@ export class JobService
                             throw new Error("Không đọc được nội dung từ file TXT đầu ra");
                         }
 
-                        await this.saveDownloadedBook(jobId, translatedBook, chapters, format);
+                        await this.saveDownloadedBook(jobId, plan.book, chapters);
                         return;
                     }
 
@@ -435,57 +433,32 @@ export class JobService
     private async saveDownloadedBook(
         jobId: string,
         book: BookInfo,
-        chapters: readonly StoredChapter[],
-        format: DownloadFormat
+        chapters: readonly StoredChapter[]
     ): Promise<void>
     {
         const fileBase = sanitizeFileName(`${book.bookId}_${book.title}`);
         const bookDir = resolve(this.config.dataDir, "books", book.bookId);
         const chaptersJson = resolve(bookDir, `${fileBase}.chapters.json`);
         const metaJson = resolve(bookDir, `${fileBase}.meta.json`);
-        const originalTxt = format === "txt"
-            ? resolve(bookDir, `${fileBase}.zh.txt`)
-            : undefined;
-        const originalEpub = format === "epub"
-            ? resolve(bookDir, `${fileBase}.epub`)
-            : undefined;
+        const originalTxt = resolve(bookDir, `${fileBase}.zh.txt`);
 
         await writeJsonFile(chaptersJson, chapters);
         await writeJsonFile(metaJson, {
             book,
-            format
+            format: "txt"
         });
 
-        if (format === "txt")
-        {
-            const content = composeNovelText(
-                book.bookId,
-                book.title,
-                book.author,
-                book.description,
-                book.tags,
-                chapters,
-                false
-            );
+        const content = composeNovelText(
+            book.bookId,
+            book.title,
+            book.author,
+            book.description,
+            book.tags,
+            chapters,
+            false
+        );
 
-            await writeTextFile(originalTxt as string, content);
-        }
-        else
-        {
-            const coverImage = await this.loadCoverImageAsync(book.coverUrl);
-            const epub = await buildEpubBuffer(
-                {
-                    book,
-                    coverImage,
-                    description: book.description,
-                    title: book.title,
-                    translated: false
-                },
-                chapters
-            );
-
-            await writeBinaryFile(originalEpub as string, epub);
-        }
+        await writeTextFile(originalTxt, content);
 
         this.library.invalidate();
 
@@ -493,10 +466,9 @@ export class JobService
             files: {
                 chaptersJson,
                 metaJson,
-                originalEpub,
                 originalTxt
             },
-            outputFormat: format,
+            outputFormat: "txt",
             progress: progress(chapters.length, chapters.length, "Đã tải xong bản tiếng Trung"),
             status: "completed"
         });

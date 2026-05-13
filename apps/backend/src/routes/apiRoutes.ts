@@ -86,14 +86,13 @@ export async function registerApiRoutes(
     app.post<{ Body: DownloadBody }>("/api/jobs/download", async (request) =>
     {
         const input = request.body.input?.trim() || request.body.bookIdOrLink?.trim();
-        const format = request.body.format === "epub" ? "epub" : "txt";
 
         if (!input)
         {
             throw new Error("Vui lòng nhập ID hoặc link truyện");
         }
 
-        return jobService.createDownloadJob(input, format);
+        return jobService.createDownloadJob(input);
     });
 
     app.post<{ Params: JobIdParams }>("/api/jobs/:id/translate", async (request) =>

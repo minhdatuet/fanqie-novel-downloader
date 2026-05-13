@@ -72,7 +72,7 @@ export function App(): React.JSX.Element {
     });
   }, [translateJob?.id]);
 
-  const book = useMemo(() => downloadJob?.book ?? plan?.book, [downloadJob?.book, plan?.book]);
+  const book = useMemo(() => plan?.book ?? downloadJob?.book, [downloadJob?.book, plan?.book]);
   const pageCount = getPageCount(libraryItems.length, LIBRARY_PAGE_SIZE);
   const safeLibraryPage = Math.min(libraryPage, pageCount);
   const pagedLibraryItems = libraryItems.slice(
@@ -115,10 +115,10 @@ export function App(): React.JSX.Element {
     });
   };
 
-  const handleDownload = (format: "txt" | "epub") => {
+  const handleDownload = () => {
     void runAction("download", async () => {
       setTranslateJob(undefined);
-      setDownloadJob(await startDownload(input, format));
+      setDownloadJob(await startDownload(input));
     });
   };
 
@@ -233,7 +233,7 @@ export function App(): React.JSX.Element {
                       progress: { current: 0, total: book.chapterCount, percent: 0, message: "Sẵn sàng tải" },
                       files: {}
                     } as JobRecord}
-                    onAction={() => handleDownload("txt")}
+                    onAction={handleDownload}
                     downloadLabel="Tải truyện"
                     downloadOptions={downloadJob?.status === "completed"
                       ? [
