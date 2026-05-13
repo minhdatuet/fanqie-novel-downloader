@@ -14,8 +14,8 @@ interface DownloadOption
 interface JobStatusProps
 {
     downloadOptions?: DownloadOption[];
+    downloadLabel?: string;
     job: JobRecord;
-    onSecondaryAction?: () => void;
     onAction?: () => void;
     title: string;
     type: "download" | "translate";
@@ -23,8 +23,8 @@ interface JobStatusProps
 
 export function JobStatus({
     downloadOptions,
+    downloadLabel = "Tải truyện",
     job,
-    onSecondaryAction,
     onAction,
     title,
     type
@@ -83,28 +83,17 @@ export function JobStatus({
                                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
                             >
                                 <Download className="h-4 w-4" />
-                                Tải {option.format.toUpperCase()}
+                                {downloadLabel}
                             </a>
                         ))}
                     </div>
                 )}
 
                 {type === "download" && isPlaceholderJob && onAction && (
-                    <div className="grid gap-2 sm:grid-cols-2">
-                        <Button variant="primary" onClick={onAction} className="w-full gap-2">
-                            <Download className="h-4 w-4" />
-                            Tải TXT
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={onSecondaryAction}
-                            disabled={!onSecondaryAction}
-                            className="w-full gap-2"
-                        >
-                            <Download className="h-4 w-4" />
-                            Tải EPUB
-                        </Button>
-                    </div>
+                    <Button variant="primary" onClick={onAction} className="w-full gap-2">
+                        <Download className="h-4 w-4" />
+                        {downloadLabel}
+                    </Button>
                 )}
 
                 {isCompleted && type === "download" && onAction && (

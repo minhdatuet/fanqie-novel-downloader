@@ -234,16 +234,12 @@ export function App(): React.JSX.Element {
                       files: {}
                     } as JobRecord}
                     onAction={() => handleDownload("txt")}
-                    onSecondaryAction={() => handleDownload("epub")}
+                    downloadLabel="Tải truyện"
                     downloadOptions={downloadJob?.status === "completed"
                       ? [
                           {
                             format: "txt",
                             url: jobFileUrl(downloadJob.id, "original", "txt")
-                          },
-                          {
-                            format: "epub",
-                            url: jobFileUrl(downloadJob.id, "original", "epub")
                           }
                         ]
                       : undefined}
@@ -255,15 +251,12 @@ export function App(): React.JSX.Element {
                     type="translate"
                     title="Dịch sang tiếng Việt"
                     job={translateJob}
+                    downloadLabel="Tải truyện"
                     downloadOptions={translateJob.status === "completed"
                       ? [
                           {
                             format: "txt",
                             url: jobFileUrl(translateJob.id, "translated", "txt")
-                          },
-                          {
-                            format: "epub",
-                            url: jobFileUrl(translateJob.id, "translated", "epub")
                           }
                         ]
                       : undefined}
@@ -321,15 +314,12 @@ export function App(): React.JSX.Element {
                 type="translate"
                 title="Đang dịch truyện"
                 job={translateJob}
+                downloadLabel="Tải truyện"
                 downloadOptions={translateJob.status === "completed"
                   ? [
                       {
                         format: "txt",
                         url: jobFileUrl(translateJob.id, "translated", "txt")
-                      },
-                      {
-                        format: "epub",
-                        url: jobFileUrl(translateJob.id, "translated", "epub")
                       }
                     ]
                   : undefined}
