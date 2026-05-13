@@ -1,0 +1,64 @@
+export type JobKind = "download" | "translate";
+
+export type JobStatus = "queued" | "running" | "completed" | "failed";
+
+export interface BookInfo
+{
+    author?: string;
+    bookId: string;
+    chapterCount: number;
+    coverUrl?: string;
+    description?: string;
+    finished?: boolean;
+    tags: string[];
+    title: string;
+}
+
+export interface ChapterRef
+{
+    id: string;
+    title: string;
+}
+
+export interface DownloadPlan
+{
+    book: BookInfo;
+    chapters: ChapterRef[];
+    raw: unknown;
+}
+
+export interface ProgressState
+{
+    current: number;
+    message: string;
+    percent: number;
+    total: number;
+}
+
+export interface JobFileSet
+{
+    chaptersJson?: string;
+    originalTxt?: string;
+    translatedTxt?: string;
+}
+
+export interface JobRecord
+{
+    book?: BookInfo;
+    createdAt: string;
+    error?: string;
+    files: JobFileSet;
+    id: string;
+    kind: JobKind;
+    progress: ProgressState;
+    sourceJobId?: string;
+    status: JobStatus;
+    updatedAt: string;
+}
+
+export interface StoredChapter
+{
+    content: string;
+    id: string;
+    title: string;
+}

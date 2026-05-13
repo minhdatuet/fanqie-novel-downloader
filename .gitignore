@@ -1,0 +1,8 @@
+node_modules/
+dist/
+storage/
+.env
+.env.local
+npm-debug.log*
+*.tsbuildinfo
+apps/backend/*/
