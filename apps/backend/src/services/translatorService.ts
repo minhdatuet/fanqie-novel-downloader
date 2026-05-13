@@ -147,29 +147,18 @@ async function translateBatch(
         return output;
     }
 
-    if (
-        getTotalLength(translatedParagraphs) > options.maxBatchCharacters
-        || translatedParagraphs.length === 1
-    )
+    if (translatedParagraphs.length === 1)
     {
-        for (let index = 0; index < translatedParagraphs.length; index += 1)
+        const translated = await translate(translatedParagraphs[0] ?? "");
+        const trimmed = translated.trim();
+
+        if (trimmed)
         {
-            const translated = await translate(translatedParagraphs[index] ?? "");
-            const trimmed = translated.trim();
+            const targetIndex = translatedIndexes[0];
 
-            if (trimmed)
+            if (targetIndex !== undefined)
             {
-                const targetIndex = translatedIndexes[index];
-
-                if (targetIndex !== undefined)
-                {
-                    output[targetIndex] = trimmed;
-                }
-            }
-
-            if (options.singleParagraphPauseMs > 0 && index + 1 < translatedParagraphs.length)
-            {
-                await sleep(options.singleParagraphPauseMs);
+                output[targetIndex] = trimmed;
             }
         }
 
@@ -257,11 +246,6 @@ function splitParagraphs(text: string): string[]
 function hasChinese(text: string): boolean
 {
     return /[\u3400-\u4DBF\u4E00-\u9FFF\uf900-\ufaff]/.test(text || "");
-}
-
-function getTotalLength(values: string[]): number
-{
-    return values.reduce((sum, value) => sum + value.length, 0);
 }
 
 function extractTranslatedText(value: unknown): string | undefined
