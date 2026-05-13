@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -148,6 +149,71 @@ export class JobService
     public getJob(id: string): JobRecord | undefined
     {
         return this.jobs.get(id);
+    }
+
+    /**
+     * Lấy đường dẫn file theo job và sinh thêm định dạng còn thiếu nếu cần.
+     * Đầu vào là id job, loại file và định dạng mong muốn.
+     */
+    public async getJobFilePathAsync(
+        jobId: string,
+        kind: "original" | "translated",
+        format: DownloadFormat
+    ): Promise<string>
+    {
+        const job = this.getJob(jobId);
+
+        if (!job)
+        {
+            throw new Error("Không tìm thấy job");
+        }
+
+        const sourcePath = kind === "translated"
+            ? job.files.translatedTxt ?? job.files.translatedEpub
+            : job.files.originalTxt ?? job.files.originalEpub;
+
+        if (!sourcePath)
+        {
+            throw new Error("File chưa sẵn sàng");
+        }
+
+        return this.ensureArtifactAsync({
+            book: job.book,
+            chaptersJson: job.files.chaptersJson,
+            format,
+            metaJson: job.files.metaJson,
+            sourcePath,
+            translated: kind === "translated"
+        });
+    }
+
+    /**
+     * Lấy đường dẫn file trong thư viện theo bookId và sinh thêm định dạng còn thiếu nếu cần.
+     * Đầu vào là bookId, loại file và định dạng mong muốn.
+     */
+    public async getLibraryFilePathAsync(
+        item: LibraryItem,
+        kind: "original" | "translated",
+        format: DownloadFormat
+    ): Promise<string>
+    {
+        const sourcePath = kind === "translated"
+            ? item.translatedPath
+            : item.originalPath;
+
+        if (!sourcePath)
+        {
+            throw new Error("File chưa sẵn sàng");
+        }
+
+        return this.ensureArtifactAsync({
+            book: this.library.toBookInfo(item),
+            chaptersJson: deriveChaptersJsonPath(sourcePath),
+            format,
+            metaJson: deriveMetaJsonPath(sourcePath),
+            sourcePath,
+            translated: kind === "translated"
+        });
     }
 
     public onJobUpdate(id: string, listener: (job: JobRecord) => void): () => void
@@ -338,6 +404,12 @@ export class JobService
 
             this.update(jobId, {
                 files: {
+                    chaptersJson: resolve(
+                        this.config.dataDir,
+                        "books",
+                        source.book.bookId,
+                        `${translatedBaseName}.chapters.json`
+                    ),
                     metaJson: resolve(
                         this.config.dataDir,
                         "books",
@@ -446,6 +518,8 @@ export class JobService
                 ? dirname(source.files.originalEpub)
                 : resolve(this.config.dataDir, "books", source.book.bookId);
         const baseName = sanitizeFileName(`${source.book.bookId}_${translatedBook.title}`);
+        const chaptersJson = resolve(baseDir, `${baseName}.chapters.json`);
+        const metaJson = resolve(baseDir, `${baseName}.meta.json`);
 
         if (format === "txt")
         {
@@ -461,7 +535,8 @@ export class JobService
             );
 
             await writeTextFile(target, content);
-            await writeJsonFile(resolve(baseDir, `${baseName}.meta.json`), {
+            await writeJsonFile(chaptersJson, chapters);
+            await writeJsonFile(metaJson, {
                 book: translatedBook,
                 format
             });
@@ -482,7 +557,8 @@ export class JobService
         );
 
         await writeBinaryFile(target, epub);
-        await writeJsonFile(resolve(baseDir, `${baseName}.meta.json`), {
+        await writeJsonFile(chaptersJson, chapters);
+        await writeJsonFile(metaJson, {
             book: translatedBook,
             format
         });
@@ -685,6 +761,69 @@ export class JobService
         throw new Error("Không tìm thấy file tiếng Trung để dịch");
     }
 
+    private async ensureArtifactAsync(params: {
+        book?: BookInfo;
+        chaptersJson?: string;
+        format: DownloadFormat;
+        metaJson?: string;
+        sourcePath: string;
+        translated: boolean;
+    }): Promise<string>
+    {
+        const baseName = normalizeArtifactBaseName(params.sourcePath);
+        const baseDir = dirname(params.sourcePath);
+        const targetPath = resolve(baseDir, getArtifactFileName(baseName, params.translated, params.format));
+
+        if (params.sourcePath === targetPath || existsSync(targetPath))
+        {
+            return targetPath;
+        }
+
+        const [chapters, book] = await Promise.all([
+            loadArtifactChaptersAsync(params.sourcePath, params.chaptersJson),
+            loadArtifactBookAsync(params.sourcePath, params.metaJson, params.book)
+        ]);
+        const resolvedBook = book ?? params.book;
+
+        if (!resolvedBook)
+        {
+            throw new Error("Không tìm thấy thông tin truyện để tạo file");
+        }
+
+        await mkdir(baseDir, { recursive: true });
+
+        if (params.format === "txt")
+        {
+            const content = composeNovelText(
+                resolvedBook.bookId,
+                resolvedBook.title,
+                resolvedBook.author,
+                resolvedBook.description,
+                resolvedBook.tags,
+                chapters,
+                params.translated
+            );
+
+            await writeTextFile(targetPath, content);
+            return targetPath;
+        }
+
+        const coverImage = await this.loadCoverImageAsync(resolvedBook.coverUrl);
+        const epub = await buildEpubBuffer(
+            {
+                book: resolvedBook,
+                coverImage,
+                description: resolvedBook.description,
+                title: resolvedBook.title,
+                translated: params.translated
+            },
+            chapters
+        );
+
+        await writeBinaryFile(targetPath, epub);
+        return targetPath;
+    }
+
     private enqueueTask(task: () => Promise<void>): void
     {
         this.taskQueue.push(task);
@@ -712,6 +851,85 @@ export class JobService
             });
         }
     }
+}
+
+function deriveMetaJsonPath(path: string): string
+{
+    return resolve(dirname(path), `${baseNameWithoutFormat(path)}.meta.json`);
+}
+
+async function loadArtifactChaptersAsync(
+    sourcePath: string,
+    chaptersJsonPath?: string
+): Promise<StoredChapter[]>
+{
+    if (chaptersJsonPath && existsSync(chaptersJsonPath))
+    {
+        return readJsonFile<StoredChapter[]>(chaptersJsonPath);
+    }
+
+    if (sourcePath.toLowerCase().endsWith(".txt"))
+    {
+        const raw = await readTextFile(sourcePath);
+        return splitTextIntoChapters(raw);
+    }
+
+    throw new Error("Không tìm thấy file chương để dựng lại định dạng");
+}
+
+async function loadArtifactBookAsync(
+    sourcePath: string,
+    metaJsonPath?: string,
+    fallbackBook?: BookInfo
+): Promise<BookInfo | undefined>
+{
+    if (metaJsonPath && existsSync(metaJsonPath))
+    {
+        const meta = await readJsonFile<{ book?: BookInfo }>(metaJsonPath);
+
+        if (meta.book)
+        {
+            return meta.book;
+        }
+    }
+
+    return fallbackBook ?? readBookInfoFromFileName(sourcePath);
+}
+
+function readBookInfoFromFileName(path: string): BookInfo | undefined
+{
+    const fileName = baseNameWithoutFormat(path);
+    const match = fileName.match(/^(\d{8,})_(.+)$/);
+
+    if (!match)
+    {
+        return undefined;
+    }
+
+    return {
+        author: undefined,
+        bookId: match[1] ?? "0",
+        chapterCount: 0,
+        coverUrl: undefined,
+        description: undefined,
+        tags: [],
+        title: match[2] ?? "Truyện chưa đặt tên"
+    };
+}
+
+function normalizeArtifactBaseName(path: string): string
+{
+    return baseNameWithoutFormat(path).replace(/(\.zh|\.vi)$/i, "");
+}
+
+function getArtifactFileName(baseName: string, translated: boolean, format: DownloadFormat): string
+{
+    if (translated)
+    {
+        return format === "epub" ? `${baseName}.vi.epub` : `${baseName}.vi.txt`;
+    }
+
+    return format === "epub" ? `${baseName}.epub` : `${baseName}.zh.txt`;
 }
 
 function progress(current: number, total: number, message: string): ProgressState
@@ -782,6 +1000,12 @@ function deriveChaptersJsonPath(path: string): string
 {
     const fileName = parse(path).name.replace(/(\.zh|\.vi)$/i, "");
     return resolve(dirname(path), `${fileName}.chapters.json`);
+}
+
+function baseNameWithoutFormat(path: string): string
+{
+    return parse(path).name
+        .replace(/(\.zh|\.vi)?$/i, "");
 }
 
 function sleep(ms: number): Promise<void>

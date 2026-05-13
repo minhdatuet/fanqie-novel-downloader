@@ -1,8 +1,7 @@
-import { existsSync } from "node:fs";
-
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type { AppConfig } from "../config.js";
+import type { DownloadFormat } from "../types.js";
 import type { JobService } from "../services/jobService.js";
 import type { LibraryService } from "../services/libraryService.js";
 import { assertInsideBase, sendFileDownload } from "../utils/file.js";
@@ -38,6 +37,7 @@ interface PreviewBookIdParams
 interface FileQuery
 {
     kind?: "original" | "translated";
+    format?: DownloadFormat;
 }
 
 interface LibraryQuery
@@ -151,27 +151,21 @@ export async function registerApiRoutes(
 
     app.get<{ Params: JobIdParams; Querystring: FileQuery }>("/api/jobs/:id/file", async (request, reply) =>
     {
-        const job = jobService.getJob(request.params.id);
         const kind = request.query.kind ?? "original";
+        const format = request.query.format === "epub" ? "epub" : "txt";
 
-        if (!job)
+        try
+        {
+            const path = await jobService.getJobFilePathAsync(request.params.id, kind, format);
+            const safePath = assertInsideBase(config.dataDir, path);
+            return sendFileDownload(reply, safePath);
+        }
+        catch (error)
         {
             return reply.code(404).send({
-                error: "Không tìm thấy job"
+                error: error instanceof Error ? error.message : "File chưa sẵn sàng"
             });
         }
-
-        const path = kind === "translated" ? job.files.translatedTxt : job.files.originalTxt;
-
-        if (!path || !existsSync(path))
-        {
-            return reply.code(404).send({
-                error: "File chưa sẵn sàng"
-            });
-        }
-
-        const safePath = assertInsideBase(config.dataDir, path);
-        return sendFileDownload(reply, safePath);
     });
 
     app.get<{ Querystring: LibraryQuery }>("/api/library", async (request) => ({
@@ -182,17 +176,27 @@ export async function registerApiRoutes(
     {
         const item = await libraryService.findByBookId(request.params.id);
         const kind = request.query.kind ?? "original";
-        const path = kind === "translated" ? item?.translatedPath : item?.originalPath;
+        const format = request.query.format === "epub" ? "epub" : "txt";
 
-        if (!path || !existsSync(path))
+        if (!item)
         {
             return reply.code(404).send({
-                error: "File chưa sẵn sàng"
+                error: "Không tìm thấy truyện trong thư viện"
             });
         }
 
-        const safePath = assertInsideBase(config.dataDir, path);
-        return sendFileDownload(reply, safePath);
+        try
+        {
+            const path = await jobService.getLibraryFilePathAsync(item, kind, format);
+            const safePath = assertInsideBase(config.dataDir, path);
+            return sendFileDownload(reply, safePath);
+        }
+        catch (error)
+        {
+            return reply.code(404).send({
+                error: error instanceof Error ? error.message : "File chưa sẵn sàng"
+            });
+        }
     });
 
     app.post<{ Params: JobIdParams }>("/api/library/:id/translate", async (request, reply) =>

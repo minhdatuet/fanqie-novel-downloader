@@ -71,14 +71,14 @@ export function startLibraryTranslate(bookId: string): Promise<JobRecord>
     });
 }
 
-export function jobFileUrl(jobId: string, kind: "original" | "translated"): string
+export function jobFileUrl(jobId: string, kind: "original" | "translated", format: DownloadFormat): string
 {
-    return `${API_BASE_URL}/api/jobs/${jobId}/file?kind=${kind}`;
+    return `${API_BASE_URL}/api/jobs/${jobId}/file?kind=${kind}&format=${format}`;
 }
 
-export function libraryFileUrl(bookId: string, kind: "original" | "translated"): string
+export function libraryFileUrl(bookId: string, kind: "original" | "translated", format: DownloadFormat): string
 {
-    return `${API_BASE_URL}/api/library/${encodeURIComponent(bookId)}/file?kind=${kind}`;
+    return `${API_BASE_URL}/api/library/${encodeURIComponent(bookId)}/file?kind=${kind}&format=${format}`;
 }
 
 export function subscribeJob(jobId: string, onUpdate: (job: JobRecord) => void): () => void

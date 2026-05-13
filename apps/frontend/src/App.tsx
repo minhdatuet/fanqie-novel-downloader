@@ -237,8 +237,18 @@ export function App(): React.JSX.Element {
                       files: {}
                     } as JobRecord}
                     onAction={handleDownload}
-                    downloadUrl={downloadJob?.status === "completed" ? jobFileUrl(downloadJob.id, "original") : undefined}
-                    formatLabel={downloadFormat.toUpperCase()}
+                    downloadOptions={downloadJob?.status === "completed"
+                      ? [
+                          {
+                            format: "txt",
+                            url: jobFileUrl(downloadJob.id, "original", "txt")
+                          },
+                          {
+                            format: "epub",
+                            url: jobFileUrl(downloadJob.id, "original", "epub")
+                          }
+                        ]
+                      : undefined}
                   />
                 )}
 
@@ -247,8 +257,18 @@ export function App(): React.JSX.Element {
                     type="translate"
                     title="Dịch sang tiếng Việt"
                     job={translateJob}
-                    downloadUrl={translateJob.status === "completed" ? jobFileUrl(translateJob.id, "translated") : undefined}
-                    formatLabel={downloadFormat.toUpperCase()}
+                    downloadOptions={translateJob.status === "completed"
+                      ? [
+                          {
+                            format: "txt",
+                            url: jobFileUrl(translateJob.id, "translated", "txt")
+                          },
+                          {
+                            format: "epub",
+                            url: jobFileUrl(translateJob.id, "translated", "epub")
+                          }
+                        ]
+                      : undefined}
                   />
                 )}
 
@@ -303,7 +323,18 @@ export function App(): React.JSX.Element {
                 type="translate"
                 title="Đang dịch truyện"
                 job={translateJob}
-                downloadUrl={translateJob.status === "completed" ? jobFileUrl(translateJob.id, "translated") : undefined}
+                downloadOptions={translateJob.status === "completed"
+                  ? [
+                      {
+                        format: "txt",
+                        url: jobFileUrl(translateJob.id, "translated", "txt")
+                      },
+                      {
+                        format: "epub",
+                        url: jobFileUrl(translateJob.id, "translated", "epub")
+                      }
+                    ]
+                  : undefined}
               />
             </div>
           )}
