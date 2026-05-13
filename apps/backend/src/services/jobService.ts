@@ -441,6 +441,8 @@ export class JobService
         const chaptersJson = resolve(bookDir, `${fileBase}.chapters.json`);
         const metaJson = resolve(bookDir, `${fileBase}.meta.json`);
         const originalTxt = resolve(bookDir, `${fileBase}.zh.txt`);
+        const originalEpubPath = resolve(bookDir, `${fileBase}.epub`);
+        let originalEpub: string | undefined;
 
         await writeJsonFile(chaptersJson, chapters);
         await writeJsonFile(metaJson, {
@@ -460,12 +462,39 @@ export class JobService
 
         await writeTextFile(originalTxt, content);
 
+        this.update(jobId, {
+            progress: progress(chapters.length, chapters.length, "Đã tải xong TXT, đang tạo EPUB tương ứng")
+        });
+
+        try
+        {
+            const coverImage = await this.loadCoverImageAsync(book.coverUrl);
+            const epub = await buildEpubBuffer(
+                {
+                    book,
+                    coverImage,
+                    description: book.description,
+                    title: book.title,
+                    translated: false
+                },
+                chapters
+            );
+
+            await writeBinaryFile(originalEpubPath, epub);
+            originalEpub = originalEpubPath;
+        }
+        catch (error)
+        {
+            console.warn("Không tạo được EPUB tương ứng sau khi tải TXT:", error);
+        }
+
         this.library.invalidate();
 
         this.update(jobId, {
             files: {
                 chaptersJson,
                 metaJson,
+                originalEpub,
                 originalTxt
             },
             outputFormat: "txt",

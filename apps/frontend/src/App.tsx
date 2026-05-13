@@ -238,9 +238,17 @@ export function App(): React.JSX.Element {
                     downloadOptions={downloadJob?.status === "completed"
                       ? [
                           {
-                            format: "txt",
+                            format: "txt" as const,
                             url: jobFileUrl(downloadJob.id, "original", "txt")
-                          }
+                          },
+                          ...(downloadJob.files.originalEpub
+                            ? [
+                                {
+                                  format: "epub" as const,
+                                  url: jobFileUrl(downloadJob.id, "original", "epub")
+                                }
+                              ]
+                            : [])
                         ]
                       : undefined}
                   />
