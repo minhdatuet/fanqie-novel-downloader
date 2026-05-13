@@ -81,6 +81,13 @@ export function JobStatus({
           </div>
         )}
 
+        {type === "download" && onAction && isPlaceholderJob && (
+          <Button variant="primary" onClick={onAction} className="w-full gap-2">
+            <Download className="h-4 w-4" />
+            Bắt đầu tải
+          </Button>
+        )}
+
         {isCompleted && type === "download" && onAction && (
           <Button variant="secondary" onClick={onAction} className="w-full gap-2">
             <Languages className="h-4 w-4" />
