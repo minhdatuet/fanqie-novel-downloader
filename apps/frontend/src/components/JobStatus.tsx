@@ -31,7 +31,7 @@ export function JobStatus({
 }: JobStatusProps)
 {
     const isPlaceholderJob = job.id === "pending";
-    const isRunning = job.status === "running" || job.status === "queued";
+    const isRunning = !isPlaceholderJob && (job.status === "running" || job.status === "queued");
     const isCompleted = job.status === "completed";
     const isFailed = job.status === "failed";
     const description = isPlaceholderJob
