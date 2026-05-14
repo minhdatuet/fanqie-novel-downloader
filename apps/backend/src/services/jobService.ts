@@ -506,6 +506,8 @@ export class JobService
 
         if (cached && cached.expiresAt > Date.now())
         {
+            await this.persistTranslatedBookMetaAsync(cached.book);
+            this.library.invalidate();
             return cached.book;
         }
 
@@ -528,9 +530,19 @@ export class JobService
             book: translatedBook,
             expiresAt: Date.now() + 30 * 60 * 1000
         });
+        await this.persistTranslatedBookMetaAsync(translatedBook);
         this.library.invalidate();
 
         return translatedBook;
+    }
+
+    private async persistTranslatedBookMetaAsync(book: BookInfo): Promise<void>
+    {
+        const path = resolve(this.config.dataDir, "book-meta", `${book.bookId}.json`);
+
+        await writeJsonFile(path, {
+            book
+        }).catch(() => undefined);
     }
 
     private async translateDescriptionAsync(description: string | undefined): Promise<string | undefined>

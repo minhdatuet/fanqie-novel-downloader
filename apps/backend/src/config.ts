@@ -165,6 +165,7 @@ export async function ensureDataDirs(config: AppConfig): Promise<void>
 {
     await mkdir(config.dataDir, { recursive: true });
     await mkdir(resolve(config.dataDir, "books"), { recursive: true });
+    await mkdir(resolve(config.dataDir, "book-meta"), { recursive: true });
     await mkdir(resolve(config.dataDir, "cache", "directory"), { recursive: true });
     await mkdir(resolve(config.dataDir, "jobs"), { recursive: true });
 }

@@ -173,7 +173,7 @@ export class LibraryService
                 continue;
             }
 
-            const meta = await readBookMeta(basis.path, bookId);
+            const meta = await readBookMeta(basis.path, bookId, this.config.dataDir);
             const translatedMeta = await this.resolveTranslatedMetaAsync(bookId);
             const mergedMeta = mergeReadBookMeta(meta, translatedMeta);
             const updatedMs = Math.max(...candidates.map((item) => item.modifiedMs));
@@ -260,9 +260,9 @@ async function findBookFiles(dir: string): Promise<BookCandidate[]>
     return out;
 }
 
-async function readBookMeta(path: string, fallbackBookId: string): Promise<ReadBookMetaResult>
+async function readBookMeta(path: string, fallbackBookId: string, dataDir: string): Promise<ReadBookMetaResult>
 {
-    const meta = await readMetaFile(path);
+    const meta = await readMetaFile(path, fallbackBookId, dataDir);
 
     if (meta?.book)
     {
@@ -301,9 +301,14 @@ async function readBookMeta(path: string, fallbackBookId: string): Promise<ReadB
     };
 }
 
-async function readMetaFile(path: string): Promise<BookMeta | undefined>
+async function readMetaFile(
+    path: string,
+    fallbackBookId: string = "",
+    dataDir: string = ""
+): Promise<BookMeta | undefined>
 {
     const candidates = [
+        ...(fallbackBookId && dataDir ? [resolve(dataDir, "book-meta", `${fallbackBookId}.json`)] : []),
         resolve(dirname(path), `${baseNameWithoutFormat(path)}.meta.json`),
         resolve(dirname(path), `${baseNameWithoutFormat(path).replace(/_vi$/i, "")}.meta.json`)
     ];
