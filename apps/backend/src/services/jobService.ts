@@ -51,7 +51,7 @@ export class JobService
         this.config = config;
         this.fanqie = new FanqieService(config);
         this.legacy = new LegacyService(config);
-        this.library = library ?? new LibraryService(config);
+        this.library = library ?? new LibraryService(config, (bookId) => this.getCachedTranslatedBook(bookId));
         this.translator = new TranslatorService(config);
         this.events.setMaxListeners(500);
     }
@@ -153,6 +153,18 @@ export class JobService
     public getJob(id: string): JobRecord | undefined
     {
         return this.jobs.get(id);
+    }
+
+    private getCachedTranslatedBook(bookId: string): BookInfo | undefined
+    {
+        const cached = this.metadataCache.get(bookId);
+
+        if (!cached || cached.expiresAt <= Date.now())
+        {
+            return undefined;
+        }
+
+        return cached.book;
     }
 
     /**
@@ -516,6 +528,7 @@ export class JobService
             book: translatedBook,
             expiresAt: Date.now() + 30 * 60 * 1000
         });
+        this.library.invalidate();
 
         return translatedBook;
     }

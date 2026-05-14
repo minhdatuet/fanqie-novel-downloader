@@ -48,6 +48,8 @@ interface ReadBookMetaResult
     title: string;
 }
 
+type TranslatedBookResolver = (bookId: string) => Promise<BookInfo | undefined> | BookInfo | undefined;
+
 export class LibraryService
 {
     private cache?: {
@@ -55,10 +57,12 @@ export class LibraryService
         items: LibraryItem[];
     };
     private readonly config: AppConfig;
+    private readonly translatedBookResolver?: TranslatedBookResolver;
 
-    public constructor(config: AppConfig)
+    public constructor(config: AppConfig, translatedBookResolver?: TranslatedBookResolver)
     {
         this.config = config;
+        this.translatedBookResolver = translatedBookResolver;
     }
 
     public async list(query: LibraryQuery = {}): Promise<LibraryItem[]>
@@ -170,25 +174,50 @@ export class LibraryService
             }
 
             const meta = await readBookMeta(basis.path, bookId);
+            const translatedMeta = await this.resolveTranslatedMetaAsync(bookId);
+            const mergedMeta = mergeReadBookMeta(meta, translatedMeta);
             const updatedMs = Math.max(...candidates.map((item) => item.modifiedMs));
 
             items.push({
-                author: meta.author,
+                author: mergedMeta.author,
                 bookId,
-                coverUrl: meta.coverUrl,
-                description: meta.description,
+                coverUrl: mergedMeta.coverUrl,
+                description: mergedMeta.description,
                 hasOriginal: Boolean(original),
                 hasTranslated: Boolean(translatedFile),
                 originalPath: original?.path,
                 relativeDir: relative(root, dirname(basis.path)).replace(/\\/g, "/"),
-                tags: meta.tags ?? [],
-                title: meta.title,
+                tags: mergedMeta.tags ?? [],
+                title: mergedMeta.title,
                 translatedPath: translatedFile?.path,
                 updatedAt: new Date(updatedMs).toISOString()
             });
         }
 
         return items.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    }
+
+    private async resolveTranslatedMetaAsync(bookId: string): Promise<ReadBookMetaResult | undefined>
+    {
+        if (!this.translatedBookResolver)
+        {
+            return undefined;
+        }
+
+        const book = await this.translatedBookResolver(bookId);
+
+        if (!book)
+        {
+            return undefined;
+        }
+
+        return {
+            author: book.author,
+            coverUrl: book.coverUrl,
+            description: book.description,
+            tags: book.tags,
+            title: book.title
+        };
     }
 }
 
@@ -328,6 +357,22 @@ function baseNameWithoutFormat(path: string): string
 {
     return basename(path)
         .replace(/\.(txt|epub)$/i, "");
+}
+
+function mergeReadBookMeta(base: ReadBookMetaResult, translated?: ReadBookMetaResult): ReadBookMetaResult
+{
+    if (!translated)
+    {
+        return base;
+    }
+
+    return {
+        author: translated.author?.trim() || base.author,
+        coverUrl: translated.coverUrl?.trim() || base.coverUrl,
+        description: translated.description?.trim() || base.description,
+        tags: translated.tags && translated.tags.length > 0 ? translated.tags : base.tags,
+        title: translated.title?.trim() || base.title
+    };
 }
 
 function matchLine(input: string, pattern: RegExp): string | undefined
