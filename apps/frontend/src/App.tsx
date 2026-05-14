@@ -240,15 +240,7 @@ export function App(): React.JSX.Element {
                           {
                             format: "txt" as const,
                             url: jobFileUrl(downloadJob.id, "original", "txt")
-                          },
-                          ...(downloadJob.files.originalEpub
-                            ? [
-                                {
-                                  format: "epub" as const,
-                                  url: jobFileUrl(downloadJob.id, "original", "epub")
-                                }
-                              ]
-                            : [])
+                          }
                         ]
                       : undefined}
                   />

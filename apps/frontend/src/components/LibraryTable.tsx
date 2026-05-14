@@ -145,7 +145,7 @@ export function LibraryTable({
                                                     className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 font-bold text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:text-emerald-400"
                                                 >
                                                     <Download className="h-3.5 w-3.5" />
-                                                    EPUB
+                                                    Tạo EPUB
                                                 </a>
                                             </div>
                                         ) : (
@@ -167,7 +167,7 @@ export function LibraryTable({
                                                     className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 font-bold text-primary-foreground transition-colors hover:bg-primary/90 shadow-sm"
                                                 >
                                                     <Download className="h-3.5 w-3.5" />
-                                                    EPUB
+                                                    Tạo EPUB
                                                 </a>
                                             </div>
                                         ) : (

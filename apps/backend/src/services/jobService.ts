@@ -404,13 +404,12 @@ export class JobService
                 }
             }
 
-            const translatedPaths = await this.saveTranslatedBook(source, translatedBook, translated);
+            const translatedPath = await this.saveTranslatedBook(source, translatedBook, translated);
             this.library.invalidate();
 
             this.update(jobId, {
                 files: {
-                    translatedEpub: translatedPaths.epub,
-                    translatedTxt: translatedPaths.txt
+                    translatedTxt: translatedPath
                 },
                 book: translatedBook,
                 progress: progress(chapters.length, chapters.length, "Đã dịch xong tiếng Việt"),
@@ -432,8 +431,6 @@ export class JobService
         const fileBase = sanitizeFileName(`${book.bookId}_${book.title}`);
         const bookDir = resolve(this.config.dataDir, "books", book.bookId);
         const originalTxt = resolve(bookDir, `${fileBase}.txt`);
-        const originalEpubPath = resolve(bookDir, `${fileBase}.epub`);
-        let originalEpub: string | undefined;
 
         const content = composeNovelText(
             book.bookId,
@@ -447,37 +444,10 @@ export class JobService
 
         await writeTextFile(originalTxt, content);
 
-        this.update(jobId, {
-            progress: progress(chapters.length, chapters.length, "Đã tải xong TXT, đang tạo EPUB tương ứng")
-        });
-
-        try
-        {
-            const coverImage = await this.loadCoverImageAsync(book.coverUrl);
-            const epub = await buildEpubBuffer(
-                {
-                    book,
-                    coverImage,
-                    description: book.description,
-                    title: book.title,
-                    translated: false
-                },
-                chapters
-            );
-
-            await writeBinaryFile(originalEpubPath, epub);
-            originalEpub = originalEpubPath;
-        }
-        catch (error)
-        {
-            console.warn("Không tạo được EPUB tương ứng sau khi tải TXT:", error);
-        }
-
         this.library.invalidate();
 
         this.update(jobId, {
             files: {
-                originalEpub,
                 originalTxt
             },
             outputFormat: "txt",
@@ -490,10 +460,7 @@ export class JobService
         source: JobRecord,
         translatedBook: BookInfo,
         chapters: readonly StoredChapter[]
-    ): Promise<{
-        epub: string;
-        txt: string;
-    }>
+    ): Promise<string>
     {
         if (!source.book)
         {
@@ -506,7 +473,6 @@ export class JobService
             : resolve(this.config.dataDir, "books", source.book.bookId);
         const baseName = sourcePath ? baseNameWithoutFormat(sourcePath) : sanitizeFileName(`${source.book.bookId}`);
         const targetTxt = resolve(baseDir, `${baseName}_vi.txt`);
-        const targetEpub = resolve(baseDir, `${baseName}_vi.epub`);
         const content = composeNovelText(
             translatedBook.bookId,
             translatedBook.title,
@@ -519,24 +485,7 @@ export class JobService
 
         await writeTextFile(targetTxt, content);
 
-        const coverImage = await this.loadCoverImageAsync(translatedBook.coverUrl);
-        const epub = await buildEpubBuffer(
-            {
-                book: translatedBook,
-                coverImage,
-                description: translatedBook.description,
-                title: translatedBook.title,
-                translated: true
-            },
-            chapters
-        );
-
-        await writeBinaryFile(targetEpub, epub);
-
-        return {
-            epub: targetEpub,
-            txt: targetTxt
-        };
+        return targetTxt;
     }
 
     private async translateBookMetadataAsync(book: BookInfo): Promise<BookInfo>
