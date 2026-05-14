@@ -156,9 +156,13 @@ export class LibraryService
         {
             const originals = candidates.filter((item) => !isTranslatedPath(item.path));
             const translated = candidates.filter((item) => isTranslatedPath(item.path));
-            const original = latest(originals);
-            const translatedFile = latest(translated);
-            const basis = translatedFile ?? original;
+            const originalTxt = latest(originals.filter((item) => item.path.toLowerCase().endsWith(".txt")));
+            const originalEpub = latest(originals.filter((item) => item.path.toLowerCase().endsWith(".epub")));
+            const translatedTxt = latest(translated.filter((item) => item.path.toLowerCase().endsWith(".txt")));
+            const translatedEpub = latest(translated.filter((item) => item.path.toLowerCase().endsWith(".epub")));
+            const original = originalTxt ?? originalEpub;
+            const translatedFile = translatedTxt ?? translatedEpub;
+            const basis = translatedTxt ?? originalTxt ?? translatedEpub ?? originalEpub;
 
             if (!basis)
             {
@@ -243,36 +247,58 @@ async function readBookMeta(path: string, fallbackBookId: string): Promise<ReadB
     }
 
     const folderName = basename(dirname(path));
-    const fallbackTitle = folderName.replace(new RegExp(`^${fallbackBookId}_?`), "") || baseNameWithoutFormat(path);
+    const fallbackTitle = folderName.replace(new RegExp(`^${escapeRegExp(fallbackBookId)}_?`), "") || baseNameWithoutFormat(path);
+
+    if (path.toLowerCase().endsWith(".epub"))
+    {
+        return {
+            title: cleanTitle(fallbackTitle)
+        };
+    }
+
     const raw = await readFile(path, "utf8").catch(() => "");
     const head = raw.slice(0, 5000);
-    const title = matchLine(head, /(?:书名|Tên sách)\s*[：:]\s*(.+)/i) ?? cleanTitle(fallbackTitle);
-    const author = matchLine(head, /(?:作者|Tác giả)\s*[：:]\s*(.+)/i);
+    const lines = head.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    const title = readHeaderValue(lines, ["书名", "Tên sách", "Tên truyện"]) ?? cleanTitle(fallbackTitle);
+    const author = readHeaderValue(lines, ["作者", "Tác giả"]);
+    const tagsValue = readHeaderValue(lines, ["标签", "Thể loại"]);
+    const description = readHeaderBlock(lines, ["简介", "Giới thiệu"]);
 
     return {
         author,
+        description,
+        tags: tagsValue ? tagsValue.split(",").map((tag) => tag.trim()).filter(Boolean) : undefined,
         title
     };
 }
 
 async function readMetaFile(path: string): Promise<BookMeta | undefined>
 {
-    const metaPath = resolve(dirname(path), `${baseNameWithoutFormat(path)}.meta.json`);
-    const raw = await readFile(metaPath, "utf8").catch(() => "");
+    const candidates = [
+        resolve(dirname(path), `${baseNameWithoutFormat(path)}.meta.json`),
+        resolve(dirname(path), `${baseNameWithoutFormat(path).replace(/_vi$/i, "")}.meta.json`)
+    ];
 
-    if (!raw)
+    for (const metaPath of candidates)
     {
-        return undefined;
+        const raw = await readFile(metaPath, "utf8").catch(() => "");
+
+        if (!raw)
+        {
+            continue;
+        }
+
+        try
+        {
+            return JSON.parse(raw) as BookMeta;
+        }
+        catch
+        {
+            continue;
+        }
     }
 
-    try
-    {
-        return JSON.parse(raw) as BookMeta;
-    }
-    catch
-    {
-        return undefined;
-    }
+    return undefined;
 }
 
 function extractBookId(path: string): string | undefined
@@ -301,14 +327,77 @@ function latest(items: BookCandidate[]): BookCandidate | undefined
 function baseNameWithoutFormat(path: string): string
 {
     return basename(path)
-        .replace(/(\.zh|\.vi)?\.(txt|epub)$/i, "")
-        .replace(/(_vi|\.vi)$/i, "");
+        .replace(/\.(txt|epub)$/i, "");
 }
 
 function matchLine(input: string, pattern: RegExp): string | undefined
 {
     const value = input.match(pattern)?.[1]?.trim();
     return value || undefined;
+}
+
+function readHeaderValue(lines: readonly string[], labels: readonly string[]): string | undefined
+{
+    const pattern = new RegExp(`^(?:${labels.map(escapeRegExp).join("|")})\\s*[：:]\\s*(.*)$`, "i");
+
+    for (const line of lines)
+    {
+        const match = line.trim().match(pattern);
+
+        if (match && match[1])
+        {
+            return match[1].trim() || undefined;
+        }
+    }
+
+    return undefined;
+}
+
+function readHeaderBlock(lines: readonly string[], labels: readonly string[]): string | undefined
+{
+    const labelPattern = new RegExp(`^(?:${labels.map(escapeRegExp).join("|")})\\s*[：:]\\s*(.*)$`, "i");
+    const separatorPattern = /^(?:={40}|-{40})$/;
+
+    for (let index = 0; index < lines.length; index += 1)
+    {
+        const line = lines[index]?.trim() ?? "";
+        const match = line.match(labelPattern);
+
+        if (!match)
+        {
+            continue;
+        }
+
+        if (match[1]?.trim())
+        {
+            return match[1].trim();
+        }
+
+        const blocks: string[] = [];
+
+        for (let next = index + 1; next < lines.length; next += 1)
+        {
+            const nextLine = lines[next] ?? "";
+
+            if (separatorPattern.test(nextLine.trim()))
+            {
+                break;
+            }
+
+            if (nextLine.trim() === "")
+            {
+                blocks.push("");
+                continue;
+            }
+
+            blocks.push(nextLine.trimEnd());
+        }
+
+        const result = blocks.join("\n").trim();
+        return result || undefined;
+    }
+
+    return undefined;
 }
 
 function cleanTitle(input: string): string
@@ -318,6 +407,11 @@ function cleanTitle(input: string): string
         .replace(/\.(zh|vi)?\.?epub$/i, "")
         .replace(/_vi$/i, "")
         .trim() || "Truyện chưa đặt tên";
+}
+
+function escapeRegExp(input: string): string
+{
+    return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalize(input: string): string
