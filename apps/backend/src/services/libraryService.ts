@@ -4,6 +4,7 @@ import { basename, dirname, relative, resolve } from "node:path";
 
 import type { AppConfig } from "../config.js";
 import type { BookInfo } from "../types.js";
+import { writeJsonFile } from "../utils/file.js";
 
 export interface LibraryItem
 {
@@ -108,6 +109,42 @@ export class LibraryService
     public invalidate(): void
     {
         this.cache = undefined;
+    }
+
+    /**
+     * Ghi lại metadata đã chuẩn hóa của thư viện vào storage riêng.
+     * Việc này chỉ chạy một lần để đồng bộ các truyện cũ sau khi nâng cấp.
+     *
+     * @returns Số truyện đã được ghi lại metadata.
+     */
+    public async migrateBookMetaAsync(): Promise<number>
+    {
+        const markerPath = resolve(this.config.dataDir, "cache", "book-meta-migration.json");
+
+        if (existsSync(markerPath))
+        {
+            return 0;
+        }
+
+        const items = await this.list();
+        let migratedCount = 0;
+
+        for (const item of items)
+        {
+            const path = resolve(this.config.dataDir, "book-meta", `${item.bookId}.json`);
+            await writeJsonFile(path, {
+                book: this.toBookInfo(item)
+            }).catch(() => undefined);
+            migratedCount += 1;
+        }
+
+        await writeJsonFile(markerPath, {
+            completedAt: new Date().toISOString(),
+            migratedCount
+        }).catch(() => undefined);
+
+        this.invalidate();
+        return migratedCount;
     }
 
     private async loadItems(): Promise<LibraryItem[]>

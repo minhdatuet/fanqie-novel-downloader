@@ -28,6 +28,11 @@ async function bootstrap(): Promise<void>
     const jobService = new JobService(config, libraryService);
     await registerApiRoutes(app, jobService, libraryService, config);
 
+    await libraryService.migrateBookMetaAsync().catch((error) =>
+    {
+        app.log.warn({ error }, "Không thể migrate metadata thư viện");
+    });
+
     await jobService.warmLegacyAsync();
 
     const currentDir = dirname(fileURLToPath(import.meta.url));
