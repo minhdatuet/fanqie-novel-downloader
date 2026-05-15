@@ -172,9 +172,9 @@ Mục tiêu: vận hành được khi có 20-30 user.
 
 Việc cần làm:
 
-1. Thêm dashboard admin riêng trên cổng riêng.
+1. Thêm role `admin`.
 2. Thêm quota theo user: số job queued/running, số job mỗi ngày.
-3. Giữ giao diện người dùng và giao diện quản trị tách biệt.
+3. Thêm admin dashboard.
 4. Admin xem job, cancel, retry.
 5. Admin xem disk usage, version legacy, queue depth.
 6. Ghi audit log cho action quan trọng.
@@ -182,14 +182,13 @@ Việc cần làm:
 Files dự kiến:
 
 - `apps/backend/src/modules/admin/*`
-- `apps/admin/*`
 - `apps/frontend/src/components/AdminDashboard.tsx`
 - `apps/frontend/src/api.ts`
 - `apps/frontend/src/types.ts`
 
 Acceptance:
 
-- User thường không vào được cổng admin.
+- User thường không vào được admin.
 - Admin thấy queue realtime.
 - Quota chặn spam job.
 - Audit log ghi create/cancel/retry/download.

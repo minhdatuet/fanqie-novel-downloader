@@ -472,7 +472,7 @@ export class JobService
             });
 
             this.throwIfCancelled(jobId);
-            await this.saveDownloadedBook(jobId, translatedBook, chapters);
+            await this.saveDownloadedBook(jobId, plan.book, chapters, translatedBook);
         }
         catch (error)
         {
@@ -544,7 +544,7 @@ export class JobService
                         }
 
                         this.throwIfCancelled(jobId);
-                        await this.saveDownloadedBook(jobId, translatedBook, chapters);
+                        await this.saveDownloadedBook(jobId, plan.book, chapters, translatedBook);
                         return;
                     }
 
@@ -655,20 +655,21 @@ export class JobService
 
     private async saveDownloadedBook(
         jobId: string,
-        book: BookInfo,
-        chapters: readonly StoredChapter[]
+        bookForFile: BookInfo,
+        chapters: readonly StoredChapter[],
+        libraryBook?: BookInfo
     ): Promise<void>
     {
-        const bookDir = resolve(this.config.dataDir, "books", book.bookId);
+        const bookDir = resolve(this.config.dataDir, "books", bookForFile.bookId);
         const originalTxt = resolve(bookDir, "original.txt");
         const manifestPath = resolve(bookDir, "manifest.json");
 
         const content = composeNovelText(
-            book.bookId,
-            book.title,
-            book.author,
-            book.description,
-            book.tags,
+            bookForFile.bookId,
+            bookForFile.title,
+            bookForFile.author,
+            bookForFile.description,
+            bookForFile.tags,
             chapters,
             false
         );
@@ -682,7 +683,7 @@ export class JobService
         const artifact = await this.buildArtifactAsync(originalTxt);
         const updatedAt = new Date().toISOString();
         const manifest: BookArtifactManifest = {
-            book,
+            book: bookForFile,
             files: {
                 original: {
                     format: "txt",
@@ -698,21 +699,21 @@ export class JobService
         await writeJsonFile(manifestPath, manifest);
 
         this.database?.upsertLibraryItem({
-            author: book.author,
-            bookId: book.bookId,
-            coverUrl: book.coverUrl,
-            description: book.description,
+            author: libraryBook?.author ?? bookForFile.author,
+            bookId: bookForFile.bookId,
+            coverUrl: libraryBook?.coverUrl ?? bookForFile.coverUrl,
+            description: libraryBook?.description ?? bookForFile.description,
             hasOriginal: true,
             hasTranslated: false,
             originalPath: originalTxt,
             relativeDir: dirname(originalTxt),
-            tags: book.tags,
-            title: book.title,
+            tags: libraryBook?.tags ?? bookForFile.tags,
+            title: libraryBook?.title ?? bookForFile.title,
             updatedAt
         });
 
         this.database?.upsertBookFile({
-            bookId: book.bookId,
+            bookId: bookForFile.bookId,
             chapterCount: chapters.length,
             createdByJobId: jobId,
             format: "txt",
@@ -1681,3 +1682,5 @@ function normalizeTranslatedText(text: string): string
         .replace(/\r/g, "\n")
         .trim();
 }
+
+

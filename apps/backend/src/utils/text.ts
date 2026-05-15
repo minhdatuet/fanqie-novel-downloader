@@ -88,22 +88,22 @@ export function composeNovelText(
     const labels = translated
         ? {
             author: "Tác giả",
-            intro: "Giới thiệu:",
-            tags: "Thể loại:",
+            intro: "Giới thiệu",
+            tags: "Thể loại",
             title: "Tên truyện"
         }
         : {
             author: "作者",
-            intro: "简介:",
-            tags: "标签:",
+            intro: "简介",
+            tags: "标签",
             title: "书名"
         };
     const parts: string[] = [
         `book_id=${bookId}`,
-        `${labels.title}: ${title}`,
-        `${labels.author}: ${author ?? ""}`,
-        `${labels.tags}: ${tags.join(", ")}`,
-        labels.intro
+        formatHeaderLine(labels.title, title),
+        formatHeaderLine(labels.author, author ?? ""),
+        formatHeaderLine(labels.tags, tags.join(", ")),
+        `${labels.intro}:`
     ];
 
     if (description?.trim())
@@ -121,6 +121,11 @@ export function composeNovelText(
     }
 
     return `${parts.join("\n")}\n`;
+}
+
+function formatHeaderLine(label: string, value: string): string
+{
+    return `${label}: ${value}`;
 }
 
 export function textToXhtmlFragment(content: string): string
@@ -184,6 +189,6 @@ function escapeHtml(input: string): string
 function normalizeTitle(input: string): string
 {
     return input
-        .replace(/[\s　：:，,。？！!、]/g, "")
+        .replace(/[\s\u3000：:，,。？?!！、]/g, "")
         .toLowerCase();
 }
