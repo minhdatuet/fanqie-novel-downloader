@@ -472,6 +472,9 @@ export class JobService
             });
 
             this.throwIfCancelled(jobId);
+            this.update(jobId, {
+                progress: progress(99, 100, "Đang ghi file và cập nhật thư viện")
+            });
             await this.saveDownloadedBook(jobId, plan.book, chapters, translatedBook);
         }
         catch (error)
@@ -544,6 +547,9 @@ export class JobService
                         }
 
                         this.throwIfCancelled(jobId);
+                        this.update(jobId, {
+                            progress: progress(99, 100, "Đang ghi file và cập nhật thư viện")
+                        });
                         await this.saveDownloadedBook(jobId, plan.book, chapters, translatedBook);
                         return;
                     }
@@ -632,6 +638,9 @@ export class JobService
             }
 
             this.throwIfCancelled(jobId);
+            this.update(jobId, {
+                progress: progress(99, 100, "Đang ghi bản dịch và cập nhật thư viện")
+            });
             const translatedPath = await this.saveTranslatedBook(jobId, source, translatedBook, translated);
             this.library.invalidate();
 
@@ -640,9 +649,9 @@ export class JobService
                     translatedTxt: translatedPath
                 },
                 book: translatedBook,
-                progress: progress(chapters.length, chapters.length, "Đã dịch xong tiếng Việt"),
-                status: "completed"
-            });
+                    progress: progress(chapters.length, chapters.length, "Đã dịch xong tiếng Việt"),
+                    status: "completed"
+                });
             this.recordJobEvent(jobId, "info", "Job dịch đã hoàn tất", {
                 translatedPath
             });
@@ -1682,5 +1691,3 @@ function normalizeTranslatedText(text: string): string
         .replace(/\r/g, "\n")
         .trim();
 }
-
-
