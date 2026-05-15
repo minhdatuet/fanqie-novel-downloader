@@ -184,7 +184,11 @@ export class LegacyService
     public mapProgress(job: LegacyJob): ProgressState
     {
         const total = job.progress?.chapter_total ?? 1;
-        const current = job.progress?.saved_chapters ?? 0;
+        const savedChapters = job.progress?.saved_chapters ?? 0;
+        const groupTotal = Math.max(1, job.progress?.group_total ?? 1);
+        const groupDone = job.progress?.group_done ?? 0;
+        const groupProgress = Math.round((groupDone / groupTotal) * total);
+        const current = Math.min(total, Math.max(savedChapters, groupProgress));
 
         return {
             current,
@@ -376,7 +380,7 @@ function mapLegacyStateMessage(state: LegacyJob["state"]): string
         case "queued":
             return "Đang chờ exe gốc xử lý";
         case "running":
-            return "Exe gốc đang tải truyện";
+            return "Đang tải truyện";
         case "done":
             return "Exe gốc đã tải xong";
         case "failed":
