@@ -138,33 +138,6 @@ export class JobService
         await this.legacy.warmUpAsync();
     }
 
-    /**
-     * Làm mới metadata thư viện sang bản đã dịch để giao diện hiển thị tiếng Việt.
-     *
-     * @returns Số truyện đã được cập nhật metadata.
-     */
-    public async refreshLibraryMetadataAsync(): Promise<number>
-    {
-        if (!this.database)
-        {
-            return 0;
-        }
-
-        const items = await this.library.list();
-        let updatedCount = 0;
-
-        for (const item of items)
-        {
-            const source = this.library.toBookInfo(item);
-            const translated = await this.translateBookMetadataAsync(source, `library-meta:${item.bookId}`);
-            this.database.upsertTranslatedLibraryMetadata(source, translated);
-            updatedCount += 1;
-        }
-
-        this.library.invalidate();
-        return updatedCount;
-    }
-
     public createDownloadJob(input: string, actorKey = "anonymous"): JobRecord
     {
         const bookId = extractBookId(input);
@@ -901,7 +874,6 @@ export class JobService
         if (cached && cached.expiresAt > Date.now())
         {
             this.throwIfCancelled(jobId);
-            await this.persistTranslatedBookMetaAsync(cached.book);
             this.library.invalidate();
             return cached.book;
         }
@@ -923,20 +895,10 @@ export class JobService
             book: translatedBook,
             expiresAt: Date.now() + 30 * 60 * 1000
         });
-        await this.persistTranslatedBookMetaAsync(translatedBook);
         this.database?.upsertTranslatedLibraryMetadata(book, translatedBook);
         this.library.invalidate();
 
         return translatedBook;
-    }
-
-    private async persistTranslatedBookMetaAsync(book: BookInfo): Promise<void>
-    {
-        const path = resolve(this.config.dataDir, "book-meta", `${book.bookId}.json`);
-
-        await writeJsonFile(path, {
-            book
-        }).catch(() => undefined);
     }
 
     private async translateDescriptionAsync(description: string | undefined): Promise<string | undefined>
