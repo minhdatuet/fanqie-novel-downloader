@@ -1,269 +1,186 @@
 # Database và storage
 
-Project hiện chưa có database. Để production ổn định, cần thêm DB trước khi mở public.
+## Hiện trạng
 
-## Lựa chọn database
+Backend dùng SQLite qua `node:sqlite` `DatabaseSync`, file nằm trong `DATA_DIR/app.db`. Schema hiện có:
 
-### Giai đoạn 1: SQLite WAL
+- `books`: metadata truyện.
+- `book_files`: file gốc/dịch theo book.
+- `jobs`: job download/translate.
+- `job_events`: event theo job.
+- `audit_logs`: audit hành vi.
+- `download_locks`: bảng lock, hiện chưa phải thành phần trung tâm.
 
-Phù hợp với VPS hiện tại nếu chỉ chạy một instance app:
+SQLite được bật:
 
-- RAM thấp.
-- Backup đơn giản.
-- Không cần vận hành service DB riêng.
-- Đủ cho 20-30 user và queue nhỏ.
+- `PRAGMA foreign_keys = ON`.
+- `PRAGMA journal_mode = WAL`.
+- `PRAGMA synchronous = NORMAL`.
+- `PRAGMA temp_store = MEMORY`.
 
-Yêu cầu:
+## Đánh giá
 
-- Bật WAL.
-- Mọi path lưu trong DB là relative path tính từ `DATA_DIR`, không lưu absolute path.
-- Có migration version.
-- Có backup file DB nhất quán.
+SQLite phù hợp cho production nhỏ nếu chỉ chạy một backend/worker process và dữ liệu chưa quá lớn. Với 20-30 user đồng thời, vấn đề không nằm ở số user đọc UI mà nằm ở:
 
-### Giai đoạn 2: PostgreSQL
+- Số job ghi DB liên tục.
+- Số event progress.
+- List library khi nhiều sách.
+- Backup trong lúc DB đang ghi.
+- Các truy vấn thiếu index.
 
-Chuyển sang PostgreSQL khi:
+## Việc cần làm ngay
+
+### 1. Thêm index
+
+Nên thêm migration tạo index:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_books_updated_at ON books(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_book_files_book_id ON book_files(book_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_status_priority_created ON jobs(status, priority DESC, created_at ASC, id ASC);
+CREATE INDEX IF NOT EXISTS idx_jobs_book_status ON jobs(book_id, status);
+CREATE INDEX IF NOT EXISTS idx_jobs_updated_at ON jobs(updated_at DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_job_events_job_created ON job_events(job_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_job_events_level_created ON job_events(level, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+```
+
+Mục tiêu:
+
+- Claim job nhanh.
+- Tìm active job theo book nhanh.
+- Admin recent jobs nhanh.
+- Metrics cửa sổ thời gian nhanh.
+- Audit/event không làm chậm DB khi lớn.
+
+### 2. Tạo bảng migration version
+
+Hiện schema được tạo trực tiếp trong code. Production nên có bảng:
+
+```sql
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
+```
+
+Sau đó mọi thay đổi schema đi qua migration có version.
+
+### 3. Giới hạn tăng trưởng log/event
+
+`job_events` và `audit_logs` sẽ tăng mãi. Cần retention:
+
+- Giữ `job_events` 30-90 ngày.
+- Giữ `audit_logs` 90-180 ngày.
+- Có job cleanup định kỳ.
+- Trước khi xóa nên backup.
+
+### 4. Tối ưu list library
+
+Hiện `listLibraryItems` đọc toàn bộ books rồi filter/paginate trong memory. Khi thư viện lớn, cần chuyển filter/pagination xuống SQL:
+
+- `WHERE id = ?` khi có `bookId`.
+- `WHERE normalized_title LIKE ? OR id LIKE ?`.
+- `LIMIT/OFFSET`.
+- Thêm cột/search index nếu cần.
+
+Ưu tiên cao nếu thư viện vượt vài nghìn truyện.
+
+### 5. Backup SQLite an toàn
+
+Không copy trực tiếp `app.db` khi DB đang ghi. Cần một trong các cách:
+
+- Dùng SQLite online backup API nếu thư viện hỗ trợ.
+- Dùng lệnh `sqlite3 app.db ".backup 'backup.db'"`.
+- Tạm checkpoint WAL trước khi copy: `PRAGMA wal_checkpoint(TRUNCATE)`, sau đó copy `app.db`.
+
+Khuyến nghị cho VPS:
+
+1. Cài `sqlite3`.
+2. Backup DB bằng `.backup`.
+3. Backup file truyện bằng `rsync --archive --delete`.
+4. Ghi manifest gồm timestamp, size, checksum nếu có.
+
+## Storage layout đề xuất
+
+```text
+/opt/tomato-downloader/
+  app/
+  storage/
+    app.db
+    books/
+    cache/
+    jobs/
+    legacy/
+  backups/
+    daily/
+    weekly/
+  tools/
+    legacy/
+      TomatoNovelDownloader
+  logs/
+```
+
+## Dung lượng 60GB
+
+60GB SSD là giới hạn đáng chú ý. Cần theo dõi:
+
+- File truyện gốc.
+- File dịch.
+- EPUB sinh thêm.
+- Legacy output trung gian.
+- Backup giữ quá nhiều bản.
+- `node_modules`, Docker image layer, log.
+
+Ngưỡng vận hành:
+
+- Disk free dưới 15GB: cảnh báo.
+- Disk free dưới 8GB: không nhận job mới.
+- Disk free dưới 4GB: dừng worker, chỉ cho tải file đã có.
+
+## Chính sách file
+
+Nên lưu mỗi truyện theo book ID để tránh trùng tên và lỗi Unicode:
+
+```text
+storage/books/{bookId}/
+  metadata.json
+  original.txt
+  original.epub
+  translated.vi.txt
+  translated.vi.epub
+  chapters.original.json
+  chapters.translated.vi.json
+```
+
+Tên hiển thị tải về có thể dùng title đã sanitize, nhưng path nội bộ nên ổn định theo ID.
+
+## Khi nào chuyển PostgreSQL
+
+Chưa cần chuyển ngay nếu chỉ một VPS và 20-30 user. Chuyển PostgreSQL khi gặp một trong các dấu hiệu:
 
 - Cần nhiều API/worker instance.
-- Cần query/report phức tạp.
-- Cần lock và transaction mạnh hơn.
-- Cần tách DB khỏi app container.
+- SQLite lock xuất hiện thường xuyên.
+- Admin/list library chậm do dữ liệu lớn.
+- Cần query analytics phức tạp.
+- Cần auth/session/quota/user model đầy đủ.
 
-Với VPS 4 GB RAM, PostgreSQL vẫn chạy được nhưng phải cấu hình tiết kiệm RAM.
+Nếu chuyển, thứ tự an toàn:
 
-## Schema đề xuất
+1. Thêm repository interface cho DB.
+2. Tách SQL khỏi service.
+3. Viết migration PostgreSQL song song.
+4. Viết script export/import từ SQLite.
+5. Chạy shadow read hoặc compare.
+6. Cutover khi dữ liệu khớp.
 
-### books
+## Checklist triển khai DB/storage
 
-| Cột | Kiểu | Ghi chú |
-| --- | --- | --- |
-| id | text | bookId Fanqie |
-| title | text | Tên hiển thị |
-| original_title | text | Tên tiếng Trung nếu có |
-| author | text | |
-| original_author | text | |
-| description | text | |
-| original_description | text | |
-| cover_url | text | |
-| chapter_count | integer | |
-| finished | boolean | nullable |
-| tags_json | text | JSON array |
-| source | text | `fanqie`, `legacy` |
-| created_at | datetime | |
-| updated_at | datetime | |
-
-### book_files
-
-| Cột | Kiểu | Ghi chú |
-| --- | --- | --- |
-| id | text | UUID |
-| book_id | text | FK books |
-| kind | text | `original`, `translated` |
-| format | text | `txt`, `epub` |
-| relative_path | text | Path dưới `DATA_DIR` |
-| size_bytes | integer | |
-| sha256 | text | |
-| chapter_count | integer | |
-| created_by_job_id | text | nullable |
-| created_at | datetime | |
-| updated_at | datetime | |
-
-Unique index:
-
-```text
-book_files(book_id, kind, format)
-```
-
-### jobs
-
-| Cột | Kiểu | Ghi chú |
-| --- | --- | --- |
-| id | text | UUID |
-| user_id | text | nullable, reserved for future auth |
-| book_id | text | nullable trước khi resolve xong |
-| type | text | `download`, `translate`, `artifact` |
-| status | text | `queued`, `running`, `completed`, `failed`, `canceling`, `canceled` |
-| priority | integer | mặc định 0 |
-| input | text | input ban đầu, đã sanitize |
-| progress_current | integer | |
-| progress_total | integer | |
-| progress_message | text | |
-| attempt_count | integer | |
-| max_attempts | integer | |
-| locked_by | text | worker id |
-| locked_at | datetime | |
-| started_at | datetime | |
-| finished_at | datetime | |
-| error_code | text | nullable |
-| error_message | text | nullable |
-| created_at | datetime | |
-| updated_at | datetime | |
-
-Index:
-
-```text
-jobs(status, priority, created_at)
-jobs(user_id, created_at)
-jobs(book_id, type, status)
-```
-
-### job_events
-
-| Cột | Kiểu | Ghi chú |
-| --- | --- | --- |
-| id | integer | auto increment |
-| job_id | text | FK jobs |
-| level | text | `info`, `warn`, `error` |
-| message | text | |
-| data_json | text | optional |
-| created_at | datetime | |
-
-### download_locks
-
-| Cột | Kiểu | Ghi chú |
-| --- | --- | --- |
-| key | text | ví dụ `download:bookId`, `translate:bookId` |
-| owner | text | worker id hoặc job id |
-| expires_at | datetime | |
-| created_at | datetime | |
-
-Mục đích: chống nhiều job cùng tải/dịch một sách.
-
-### audit_logs
-
-| Cột | Kiểu | Ghi chú |
-| --- | --- | --- |
-| id | text | UUID |
-| user_id | text | nullable, reserved for future auth |
-| action | text | `login`, `create_job`, `download_file`, `cancel_job` |
-| ip | text | |
-| user_agent | text | |
-| data_json | text | |
-| created_at | datetime | |
-
-## ORM hoặc query layer
-
-Khuyến nghị:
-
-- Nếu muốn type-safe nhẹ: Drizzle ORM.
-- Nếu muốn migration/schema rõ và quen thuộc: Prisma.
-- Nếu muốn ít dependency: `better-sqlite3` + migration SQL tự quản.
-
-Với project hiện tại, Drizzle hoặc `better-sqlite3` là vừa đủ. Không nên nhét DB call trực tiếp vào route; tạo repository:
-
-```text
-BookRepository
-BookFileRepository
-JobRepository
-UserRepository
-AuditLogRepository
-```
-
-## Migration từ storage hiện tại
-
-Tạo script:
-
-```text
-scripts/migrate-storage-to-db.mjs
-```
-
-Luồng:
-
-1. Scan `storage/books`.
-2. Parse bookId từ folder/file/meta hiện có.
-3. Đọc metadata từ `storage/book-meta/{bookId}.json` nếu có.
-4. Upsert `books`.
-5. Tính size và sha256 cho mỗi file.
-6. Upsert `book_files`.
-7. Ghi report số file migrate, số file lỗi.
-
-Script phải idempotent, chạy lại không tạo duplicate.
-
-## Layout storage mục tiêu
-
-```text
-storage/
-├── app.db
-├── books/
-│   └── {bookId}/
-│       ├── original.txt
-│       ├── original.epub
-│       ├── translated.txt
-│       ├── translated.epub
-│       └── manifest.json
-├── temp/
-│   └── jobs/
-│       └── {jobId}/
-├── cache/
-│   ├── covers/
-│   └── directory/
-└── backups/
-```
-
-Không nên đặt tên file chính bằng title vì title có thể đổi, quá dài hoặc chứa ký tự đặc biệt. Title chỉ dùng cho tên file
-khi gửi download qua `Content-Disposition`.
-
-## Atomic write
-
-Mọi file output cần ghi theo pattern:
-
-1. Ghi vào `storage/temp/jobs/{jobId}/{name}.tmp`.
-2. Flush xong thì tính sha256.
-3. Move/rename vào path cuối cùng cùng filesystem.
-4. Upsert DB trong transaction.
-5. Cleanup temp.
-
-Nếu job fail giữa chừng, temp folder có thể được cleanup theo cron.
-
-## Checksum và integrity
-
-Mỗi `book_files` nên lưu:
-
-- `sha256`
-- `size_bytes`
-- `chapter_count`
-- `created_by_job_id`
-
-Khi tải file:
-
-- Kiểm tra path nằm trong `DATA_DIR` bằng path safety.
-- Kiểm tra file tồn tại.
-- Có thể so size hiện tại với DB. Nếu lệch thì báo file lỗi và yêu cầu regenerate.
-
-## Backup
-
-Backup tối thiểu:
-
-- SQLite DB: hằng ngày.
-- `storage/books`: hằng ngày hoặc incremental bằng `rsync`.
-- `.env` production: backup thủ công vào nơi an toàn, không commit.
-
-Retention đề xuất:
-
-- 7 bản hằng ngày.
-- 4 bản hằng tuần.
-- 3 bản hằng tháng nếu storage đủ.
-
-Restore drill:
-
-- Mỗi tháng thử restore vào thư mục tạm.
-- Chạy app với `DATA_DIR` restore.
-- Kiểm tra thư viện, tải file, job mới.
-## Điều chỉnh phạm vi Phase 2
-
-Phase 2 không cần các bảng tài khoản/người dùng trong giai đoạn đầu.
-Database nên tập trung vào dữ liệu vận hành và chống spam:
-
-- `books`
-- `book_files`
-- `jobs`
-- `job_events`
-- `audit_logs`
-- `download_locks` hoặc bảng/khóa tương đương để chặn spam theo bookId
-- nếu cần, thêm bảng lưu giới hạn theo IP hoặc bộ đếm ngắn hạn
-
-Không cần ưu tiên:
-
-- `users`
-- `sessions`
-- không có luồng phân quyền theo tài khoản
+- Thêm migration version table.
+- Thêm index cần thiết.
+- Chuyển list library sang SQL pagination.
+- Thêm retention job cho events/audit.
+- Viết backup SQLite an toàn.
+- Viết restore script và test restore.
+- Thêm disk guard trước khi tạo job.
+- Chuẩn hóa storage theo `{bookId}`.

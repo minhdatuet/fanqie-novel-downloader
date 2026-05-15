@@ -1,230 +1,176 @@
-# Kiến trúc production đề xuất
+# Kiến trúc mục tiêu
 
-Mục tiêu kiến trúc là giữ hệ thống đơn giản để chạy ổn trên một VPS, nhưng đủ bền để có nhiều user và restart không mất
-trạng thái.
+## Mục tiêu
 
-## Nguyên tắc
+Kiến trúc mục tiêu cần đáp ứng:
 
-- API web không chạy job nặng trực tiếp trong request.
-- Mọi job tải/dịch phải đi qua persistent queue.
-- Mọi trạng thái quan trọng phải nằm trong database.
-- File truyện nằm trên filesystem, database chỉ lưu metadata, trạng thái, checksum và đường dẫn tương đối.
-- Downloader legacy là dependency bên ngoài, phải chạy như sidecar nội bộ, không expose public.
-- Production phải có rate limit, quota, backup và metrics ngay từ đầu.
+- 20-30 người dùng đồng thời xem UI, tìm thư viện, tạo/tải job.
+- 1 VPS 2 CPU/4GB RAM/60GB SSD chạy ổn định.
+- Tải truyện qua Linux-compatible legacy downloader đã test.
+- Có thể restart service mà không mất job đã queue/completed.
+- Có thể nâng cấp dần lên nhiều worker hoặc server lớn hơn.
 
-## Sơ đồ mục tiêu
+## Kiến trúc production giai đoạn 1
 
 ```mermaid
 flowchart LR
-    User["Người dùng"] --> Nginx["Nginx HTTPS"]
-    Nginx --> Frontend["Static frontend"]
-    Nginx --> Api["Fastify API"]
-
-    Api --> Db["SQLite WAL hoặc PostgreSQL"]
-    Api --> Queue["Persistent job queue"]
-    Api --> Storage["Filesystem storage"]
-
-    Queue --> Worker["Worker tải/dịch"]
-    Worker --> Legacy["Legacy downloader 127.0.0.1"]
-    Worker --> Translator["STV hoặc provider dịch"]
-    Worker --> Storage
-    Worker --> Db
-
-    Api --> Metrics["/metrics nội bộ"]
-    Storage --> Backup["Backup hằng ngày"]
-    Db --> Backup
+    User["Người dùng"] --> Proxy["Caddy/Nginx HTTPS"]
+    Proxy --> Web["Frontend static"]
+    Proxy --> Api["Fastify API"]
+    Proxy --> AdminGuard["Admin route nội bộ hoặc basic auth"]
+    AdminGuard --> Admin["Admin UI"]
+    Api --> Sqlite["SQLite WAL app.db"]
+    Api --> Storage["storage/books, jobs, cache"]
+    Api --> Worker["In-process queue worker"]
+    Worker --> Legacy["Legacy downloader 127.0.0.1:18424"]
+    Worker --> STV["STV translation API"]
+    Backup["Backup cron"] --> Storage
+    Backup --> Sqlite
+    Metrics["Prometheus hoặc local scraper"] --> Api
 ```
 
-## Kiến trúc một VPS khuyến nghị
+Đây là kiến trúc phù hợp nhất cho VPS hiện tại. Chỉ có một backend process chính, tránh phức tạp distributed lock.
 
-Với VPS hiện tại, nên bắt đầu bằng:
+## Thành phần
 
-- Nginx trên host hoặc container.
-- Một container app Node.js.
-- SQLite WAL trong volume riêng.
-- Filesystem storage trong volume riêng.
-- Downloader legacy Linux chạy cùng container hoặc sidecar container.
-- Không dùng Redis/PostgreSQL ngay nếu muốn giảm RAM và vận hành đơn giản.
+### Reverse proxy
 
-Khi nào nâng cấp:
+Nên dùng Caddy nếu muốn TLS tự động, hoặc Nginx nếu đã quen vận hành.
 
-- Chuyển PostgreSQL khi cần nhiều instance API hoặc truy vấn thư viện phức tạp.
-- Thêm Redis/BullMQ khi cần nhiều worker độc lập hoặc retry/schedule nâng cao.
-- Tách storage ra object storage khi 60 GB SSD không còn đủ.
+Trách nhiệm:
 
-## Module backend mục tiêu
+- Terminate TLS.
+- Gzip/brotli static asset.
+- Giới hạn body size.
+- Rate limit cấp proxy.
+- Chỉ proxy route cần thiết tới backend.
+- Chặn truy cập trực tiếp `/metrics`, admin port và legacy port từ Internet.
 
-Đề xuất refactor dần sang cấu trúc:
+### Backend API
 
-```text
-apps/backend/src/
-├── app.ts
-├── server.ts
-├── config/
-│   ├── env.ts
-│   └── logger.ts
-├── modules/
-│   ├── books/
-│   ├── downloads/
-│   ├── jobs/
-│   ├── library/
-│   ├── storage/
-│   ├── translation/
-├── infra/
-│   ├── db/
-│   ├── legacy/
-│   ├── queue/
-│   └── metrics/
-└── shared/
-    ├── errors.ts
-    ├── schemas.ts
-    └── pathSafety.ts
+Trách nhiệm:
+
+- Validate input.
+- Tạo job.
+- Trả trạng thái job.
+- Phục vụ file tải về.
+- Ghi audit log.
+- Expose health/ready/metrics.
+
+Backend không nên:
+
+- Chạy quá nhiều job nặng.
+- Tin tưởng `x-forwarded-for` nếu chưa cấu hình trusted proxy.
+- Tự public admin không có auth.
+
+### Worker
+
+Giai đoạn 1 worker vẫn nằm trong backend process, nhưng cần quy ước rõ:
+
+- Chỉ một process backend chạy worker.
+- `JOB_CONCURRENCY` thấp.
+- Khi restart, job `running` được recover về `queued`.
+- Không scale ngang API khi worker in-process chưa tách.
+
+Giai đoạn 2 có thể tách worker thành process riêng:
+
+- `api` chỉ nhận request và ghi job.
+- `worker` claim job từ DB/Redis.
+- Có thể chạy 1-2 worker process tùy CPU/RAM.
+
+### Legacy downloader
+
+Legacy downloader nên chạy loopback-only:
+
+- `LEGACY_HOST=127.0.0.1`.
+- `LEGACY_PORT=18424`.
+- Không map port ra Internet.
+- Binary đặt tại `/opt/tomato-downloader/tools/legacy/TomatoNovelDownloader`.
+- Có quyền execute.
+
+Backend là client duy nhất gọi legacy API.
+
+### Database
+
+Giai đoạn 1:
+
+- SQLite WAL.
+- Một writer chính.
+- Index rõ cho jobs, books, book_files, audit_logs.
+- Backup bằng SQLite online backup hoặc checkpoint + copy an toàn.
+
+Giai đoạn 2:
+
+- Nếu user/job tăng mạnh, chuyển PostgreSQL.
+- Redis dùng cho rate limit, queue event, distributed lock.
+
+### Storage
+
+Storage local vẫn phù hợp cho VPS hiện tại:
+
+- `storage/books`: file truyện gốc/dịch.
+- `storage/jobs`: snapshot job.
+- `storage/cache`: cache.
+- `storage/legacy`: data riêng của legacy downloader.
+- `storage/app.db`: SQLite.
+
+Không nên để `storage` trong image container. Phải mount volume hoặc dùng thư mục host cố định.
+
+## Kiến trúc giai đoạn 2 khi cần scale
+
+```mermaid
+flowchart LR
+    User["Người dùng"] --> Proxy["Reverse proxy"]
+    Proxy --> Api1["API instance"]
+    Proxy --> Api2["API instance"]
+    Api1 --> Postgres["PostgreSQL"]
+    Api2 --> Postgres
+    Api1 --> Redis["Redis"]
+    Api2 --> Redis
+    Worker1["Worker 1"] --> Redis
+    Worker2["Worker 2"] --> Redis
+    Worker1 --> Postgres
+    Worker2 --> Postgres
+    Worker1 --> Storage["Object storage hoặc shared volume"]
+    Worker2 --> Storage
+    Worker1 --> Legacy1["Legacy downloader"]
+    Worker2 --> Legacy2["Legacy downloader"]
 ```
 
-Không cần refactor toàn bộ ngay. Khi thêm database và queue, tách theo module mới trước, rồi di chuyển code cũ từng phần.
+Chỉ chuyển sang giai đoạn 2 khi:
 
-## API production tối thiểu
+- Queue backlog kéo dài dù đã tối ưu.
+- SQLite lock/latency xuất hiện thường xuyên.
+- Cần nhiều worker hoặc nhiều server.
+- Storage 60GB không đủ.
 
-API public:
+## Quy tắc ranh giới module
 
-- `POST /api/books/resolve`
-- `GET /api/books`
-- `GET /api/books/:bookId`
-- `POST /api/jobs/download`
-- `POST /api/books/:bookId/translate`
-- `GET /api/jobs`
-- `GET /api/jobs/:id`
-- `GET /api/jobs/:id/events`
-- `POST /api/jobs/:id/cancel`
-- `POST /api/jobs/:id/retry`
-- `GET /api/books/:bookId/files/:kind/:format`
+- Route không xử lý business logic nặng.
+- Service không đọc trực tiếp request/reply.
+- Database layer không chứa logic filesystem phức tạp ngoài normalize path.
+- Worker không phụ thuộc frontend/admin.
+- Legacy bridge phải được bọc sau interface để có thể thay thế.
+- Translator phải có rate limit/retry riêng, không để job tạo bão request.
 
-API nội bộ:
+## API cần ổn định hóa
 
-- `GET /healthz`: process còn sống.
-- `GET /readyz`: DB, storage, legacy bridge sẵn sàng.
-- `GET /metrics`: chỉ cho localhost/Nginx allowlist.
+Các API public nên được version sau khi production:
 
-## State machine của job
+- `/api/v1/books/resolve`
+- `/api/v1/jobs/download`
+- `/api/v1/jobs/:id`
+- `/api/v1/jobs/:id/events`
+- `/api/v1/jobs/:id/file`
+- `/api/v1/library`
+- `/api/v1/library/:bookId/file`
 
-Job nên có state rõ ràng:
+Giữ route cũ một thời gian bằng alias nếu frontend đang dùng.
 
-```text
-queued -> running -> completed
-queued -> canceled
-running -> canceling -> canceled
-running -> failed
-failed -> queued
-```
+## Nguyên tắc fail-safe
 
-Field cần có:
-
-- `id`
-- `type`: `download`, `translate`, `artifact`
-- `status`
-- `bookId`
-- `userId`
-- `priority`
-- `progressCurrent`
-- `progressTotal`
-- `progressMessage`
-- `attemptCount`
-- `maxAttempts`
-- `lockedBy`
-- `lockedAt`
-- `createdAt`
-- `updatedAt`
-- `startedAt`
-- `finishedAt`
-- `errorCode`
-- `errorMessage`
-
-## Luồng tải sách mục tiêu
-
-1. API validate input.
-2. Parse `bookId`.
-3. Kiểm tra `books` và `book_files`.
-4. Nếu sách đã có original hợp lệ, trả về record hiện có.
-5. Nếu chưa có, tạo job `download`.
-6. Queue đảm bảo cùng một `bookId` chỉ có một download active.
-7. Worker gọi legacy downloader.
-8. Worker ghi file vào temp path.
-9. Worker validate file, tính checksum, move atomic vào storage.
-10. Worker cập nhật DB và phát event.
-
-## Luồng dịch mục tiêu
-
-1. API kiểm tra file original tồn tại.
-2. Nếu đã có translated file hợp lệ, trả về file hiện có.
-3. Nếu chưa có, tạo job `translate`.
-4. Worker chia chương, giới hạn concurrency theo config.
-5. Mỗi chương dịch xong ghi checkpoint vào DB hoặc temp JSON.
-6. Nếu job fail, retry chỉ dịch lại chương chưa xong khi có thể.
-7. Khi hoàn tất, ghi TXT/EPUB atomic và cập nhật `book_files`.
-
-## Luồng tạo artifact EPUB
-
-Hiện tại EPUB tạo on demand từ TXT/EPUB nguồn. Production nên tách thành job hoặc cache rõ ràng:
-
-- Nếu file EPUB đã có và checksum hợp lệ, trả ngay.
-- Nếu chưa có, tạo job `artifact`.
-- Với file nhỏ có thể tạo sync, nhưng cần timeout và lock theo `bookId + kind + format`.
-
-## Ranh giới trách nhiệm
-
-API:
-
-- Auth, validation, tạo job, đọc DB, stream file.
-- Không thực hiện tải/dịch dài trong request.
-
-Worker:
-
-- Chạy job nặng.
-- Gọi legacy/STV.
-- Ghi storage.
-- Cập nhật progress.
-
-Database:
-
-- Nguồn sự thật cho user, books, jobs, files, quota, audit.
-
-Filesystem:
-
-- Lưu content thật.
-- Không dùng filename làm nguồn metadata duy nhất.
-## Điều chỉnh phạm vi kiểm soát truy cập
-
-Tài liệu này trước đó nghiêng về auth/session. Theo hướng mới, phase đầu không cần đăng ký
-hay đăng nhập tài khoản. Mục tiêu trước mắt là chống spam và giới hạn tải:
-
-- Rate limit theo IP và theo endpoint nhạy cảm.
-- Validation cho mọi input vào API.
-- Backpressure khi queue đầy.
-- Nếu cần chặn public tạm thời thì ưu tiên reverse proxy hoặc allowlist hạ tầng,
-  không phải cơ chế tài khoản người dùng.
-
-## API production tối thiểu đã điều chỉnh
-
-Các endpoint public vẫn giữ nguyên phần tải sách, dịch, thư viện và file.
-Các endpoint `auth` không còn nằm trong phạm vi phase đầu.
-
-API cần ưu tiên:
-
-- `POST /api/books/resolve`
-- `GET /api/books`
-- `GET /api/books/:bookId`
-- `POST /api/jobs/download`
-- `POST /api/books/:bookId/translate`
-- `GET /api/jobs`
-- `GET /api/jobs/:id`
-- `GET /api/jobs/:id/events`
-- `POST /api/jobs/:id/cancel`
-- `POST /api/jobs/:id/retry`
-- `GET /api/books/:bookId/files/:kind/:format`
-
-Yêu cầu bảo vệ:
-
-- Validate input đầy đủ.
-- Rate limit các endpoint tạo job và resolve.
-- Giới hạn số job active theo IP và toàn hệ thống.
-- Không để request bình thường tạo tải nặng vô hạn.
+- Nếu legacy downloader chết, backend phải trả lỗi rõ và job fail có retry.
+- Nếu STV lỗi/throttle, job dịch fail có retry/backoff, không retry vô hạn.
+- Nếu disk free thấp, không nhận job download mới.
+- Nếu DB busy, API phải trả 503/429 thay vì treo.
+- Nếu backup fail, admin dashboard phải hiển thị rõ.

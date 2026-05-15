@@ -1,62 +1,36 @@
-# Deployment và vận hành
+# Deployment và vận hành trên VPS Linux
 
-Tài liệu này dành cho production một VPS.
+## Mục tiêu deploy
 
-## Vấn đề Docker hiện tại
+Chạy ổn định trên VPS `vps-bdst`:
 
-Dockerfile hiện:
+- 2 CPU cores.
+- 4GB RAM.
+- 60GB SSD.
+- 100Mbps.
 
-- Build backend/frontend thành công.
-- Runtime chỉ copy `apps/backend/dist` và `apps/frontend/dist`.
-- Không copy `tools/legacy`.
-- Dùng `node:24-alpine`.
+## Mô hình khuyến nghị
 
-Hệ quả:
+Giai đoạn đầu nên chạy Docker Compose hoặc systemd. Nếu đã quen Docker, dùng Docker Compose. Nếu legacy binary gặp vấn đề libc trong Alpine image, cân nhắc đổi runtime image sang Debian slim hoặc chạy Node bằng systemd ngoài host.
 
-- Nếu không mount hoặc copy Linux downloader vào runtime, `LEGACY_BRIDGE=true` vẫn có thể bị disable vì binary không tồn tại.
-- Vì image là Alpine, nếu chạy legacy trong cùng container nên dùng asset `Linux_musl_amd64`.
-- Nếu muốn dùng asset `Linux_amd64`, nên đổi runtime sang Debian/Ubuntu slim.
+## Lưu ý Dockerfile hiện tại
 
-## Cách đóng gói legacy khuyến nghị
+Dockerfile hiện dùng `node:24-alpine`.
 
-### Phương án A: Alpine + musl binary
+Rủi ro:
 
-Dùng khi giữ `node:24-alpine`.
+- Binary legacy Linux từ release có thể cần glibc, trong khi Alpine dùng musl.
+- Dockerfile chưa copy `apps/admin/dist` vào runtime.
+- Dockerfile không copy legacy binary vào image, compose mount từ host.
 
-Asset:
+Việc cần làm:
 
-```text
-TomatoNovelDownloader-Linux_musl_amd64-v2.4.9
-```
+- Test binary legacy trong container Alpine.
+- Nếu lỗi `not found` dù file tồn tại hoặc lỗi dynamic linker, đổi sang `node:24-bookworm-slim`.
+- Copy admin dist nếu muốn admin server hoạt động trong container.
+- Đảm bảo binary có quyền execute: `chmod +x`.
 
-Đặt trong image hoặc mount:
-
-```text
-/app/tools/legacy/TomatoNovelDownloader
-```
-
-Env:
-
-```env
-LEGACY_EXE_PATH=/app/tools/legacy/TomatoNovelDownloader
-LEGACY_DATA_DIR=/app/storage/legacy
-```
-
-### Phương án B: Debian slim + glibc binary
-
-Dùng khi đổi image sang Debian slim.
-
-Asset:
-
-```text
-TomatoNovelDownloader-Linux_amd64-v2.4.9
-```
-
-Ưu điểm: môi trường glibc phổ biến hơn.
-
-## Docker Compose production mẫu
-
-Đây là hướng triển khai tối thiểu, cần thay domain và path thật:
+## Compose production đề xuất
 
 ```yaml
 services:
@@ -64,211 +38,174 @@ services:
         build: .
         env_file:
             - .env.production
-        environment:
-            DATA_DIR: /app/storage
-            HOST: 0.0.0.0
-            PORT: 8787
-            LEGACY_HOST: 127.0.0.1
-            LEGACY_PORT: 18424
-            LEGACY_EXE_PATH: /app/tools/legacy/TomatoNovelDownloader
         ports:
             - "127.0.0.1:8787:8787"
         volumes:
-            - ./storage:/app/storage
-            - ./tools/legacy/TomatoNovelDownloader:/app/tools/legacy/TomatoNovelDownloader:ro
+            - /opt/tomato-downloader/storage:/app/storage
+            - /opt/tomato-downloader/backups:/app/backups
+            - /opt/tomato-downloader/tools/legacy/TomatoNovelDownloader:/app/tools/legacy/TomatoNovelDownloader:ro
         restart: unless-stopped
+        logging:
+            driver: json-file
+            options:
+                max-size: "10m"
+                max-file: "5"
 ```
 
-Không publish port legacy.
+Backend trong container có thể vẫn bind `0.0.0.0` vì port chỉ map vào `127.0.0.1` host. Nếu chạy systemd trực tiếp, đặt `HOST=127.0.0.1`.
 
-## Nginx reverse proxy
-
-Nginx nên terminate TLS và proxy về `127.0.0.1:8787`.
-
-```nginx
-server {
-    listen 80;
-    server_name ten-mien-cua-ban.example;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name ten-mien-cua-ban.example;
-
-    client_max_body_size 1m;
-
-    location / {
-        proxy_pass http://127.0.0.1:8787;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /api/jobs/ {
-        proxy_pass http://127.0.0.1:8787;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 1h;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-SSE cần `proxy_buffering off`.
-
-## Env production khởi điểm
+## Env production đề xuất
 
 ```env
 NODE_ENV=production
 HOST=0.0.0.0
 PORT=8787
+ADMIN_HOST=127.0.0.1
+ADMIN_PORT=10052
 WEB_ORIGIN=https://ten-mien-cua-ban.example
+
 DATA_DIR=/app/storage
+BACKUP_DIR=/app/backups
 
 JOB_CONCURRENCY=2
+LEGACY_MAX_WORKERS=6
+MAX_WORKERS=6
+REQUEST_TIMEOUT_MS=45000
+MAX_RETRIES=3
+DAILY_JOB_QUOTA=10
+
+TRANSLATION_PROVIDER=stv
+TRANSLATION_CONCURRENCY=2
+TRANSLATION_BATCH_PAUSE_MS=0
+TRANSLATION_MAX_BATCH_CHARACTERS=8000
+TRANSLATION_PARAGRAPH_BATCH_SIZE=10
+TRANSLATION_PARAGRAPH_BATCH_PAUSE_MS=500
+TRANSLATION_SINGLE_PARAGRAPH_PAUSE_MS=150
+
 LEGACY_BRIDGE=true
 LEGACY_HOST=127.0.0.1
 LEGACY_PORT=18424
-LEGACY_EXE_PATH=/app/tools/legacy/TomatoNovelDownloader
 LEGACY_DATA_DIR=/app/storage/legacy
-LEGACY_MAX_WORKERS=6
-
-MAX_WORKERS=6
-MAX_RETRIES=3
-REQUEST_TIMEOUT_MS=30000
-
-TRANSLATION_PROVIDER=stv
-TRANSLATION_CONCURRENCY=4
-TRANSLATION_BATCH_PAUSE_MS=0
-TRANSLATION_MAX_BATCH_CHARACTERS=8000
-TRANSLATION_PARAGRAPH_BATCH_SIZE=12
-TRANSLATION_PARAGRAPH_BATCH_PAUSE_MS=300
-TRANSLATION_SINGLE_PARAGRAPH_PAUSE_MS=120
-STV_API_URL=https://comic.sangtacvietcdn.xyz/tsm.php
+LEGACY_EXE_PATH=/app/tools/legacy/TomatoNovelDownloader
+FANQIE_API_ENDPOINTS=
 ```
 
-Không đặt `WEB_ORIGIN=*` trong production.
+## Reverse proxy
 
-## Healthcheck
+Chạy Caddy hoặc Nginx trên host:
 
-Thêm endpoint:
+- Public: 80/443.
+- Proxy tới `127.0.0.1:8787`.
+- Không public port 8787.
+- Không public port 18424.
+- Không public port 10052 nếu chưa có auth.
 
-- `/healthz`: trả ok nếu process sống.
-- `/readyz`: kiểm tra DB, storage writable, legacy health nếu bật bridge.
+## Health check
 
-Docker healthcheck mẫu:
+Endpoint:
 
-```dockerfile
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-```
+- `/healthz`: process còn sống.
+- `/readyz`: storage writable và legacy warmup nếu bật.
+- `/metrics`: local metrics.
 
-## Logging
+Production monitor nên gọi:
 
-Hiện Fastify logger bật `true`. Production cần:
-
-- Log JSON.
-- Có request id.
-- Không log secret.
-- Log job id, book id, user id, duration.
-- Rotate log nếu ghi file.
-
-Nếu dùng Docker, để log stdout/stderr và cấu hình Docker log rotation:
-
-```json
-{
-    "log-driver": "json-file",
-    "log-opts": {
-        "max-size": "10m",
-        "max-file": "5"
-    }
-}
-```
+- `http://127.0.0.1:8787/healthz` mỗi 30 giây.
+- `http://127.0.0.1:8787/readyz` mỗi 60 giây.
 
 ## Backup
 
-Script backup tối thiểu:
+Lịch đề xuất:
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
+- DB backup: mỗi 6 giờ.
+- Storage incremental: mỗi ngày.
+- Weekly full backup: mỗi tuần.
+- Retention local: 7 daily, 4 weekly nếu đủ dung lượng.
+- Remote backup: tối thiểu DB và metadata, tốt nhất toàn bộ `storage/books`.
 
-APP_DIR="/opt/tomato-downloader"
-BACKUP_DIR="/opt/backups/tomato"
-DATE="$(date +%Y%m%d-%H%M%S)"
+Với 60GB SSD, không nên giữ quá nhiều full backup local.
 
-mkdir -p "$BACKUP_DIR"
-tar -czf "$BACKUP_DIR/storage-$DATE.tar.gz" -C "$APP_DIR" storage
-find "$BACKUP_DIR" -name "storage-*.tar.gz" -mtime +14 -delete
-```
+## Deploy checklist
 
-Khi có SQLite:
+Trước deploy:
 
-- Dùng SQLite backup command hoặc dừng app ngắn để copy DB nhất quán.
-- Không chỉ copy file DB khi WAL đang active nếu không hiểu rõ WAL files.
+- Build pass.
+- Test pass.
+- `.env.production` đúng.
+- Legacy binary đúng phiên bản Linux.
+- Binary có execute permission.
+- `storage` và `backups` có owner đúng.
+- Reverse proxy config valid.
+- Backup cũ vẫn restore được.
 
-## Disk management
+Sau deploy:
 
-VPS có 60 GB SSD. Cần giữ:
+- Gọi `/healthz`.
+- Gọi `/readyz`.
+- Tạo 1 job resolve.
+- Tạo 1 job download nhỏ.
+- Tải file kết quả.
+- Kiểm tra log không có lỗi legacy.
+- Kiểm tra `/metrics` từ local.
 
-- 10-15 GB cho OS, Docker image, logs.
-- 35-45 GB cho `storage/books`.
-- 5 GB buffer tránh full disk.
+## Runbook sự cố
 
-Alert nếu:
+### Downloader legacy không khởi động
 
-- Disk dùng trên 80%.
-- Disk dùng trên 90% thì tạm ngừng nhận job mới.
-- Temp folder lớn bất thường.
+Kiểm tra:
 
-Cleanup policy:
+- `LEGACY_EXE_PATH`.
+- Quyền execute.
+- Binary có phù hợp OS/container không.
+- Port `18424` có bị chiếm không.
+- Log có lỗi dynamic linker không.
 
-- Xóa temp job cũ hơn 24 giờ.
-- Có admin command để xóa job failed cũ.
-- Không tự xóa sách user nếu chưa có UI/quy tắc rõ.
+Hành động:
 
-## Quy trình deploy
+- Nếu chạy Alpine bị lỗi, đổi image Debian slim.
+- Nếu port bị chiếm, kill process cũ hoặc đổi port.
 
-1. Pull code.
-2. Chạy `npm ci`.
-3. Chạy `npm run build`.
-4. Chạy test.
-5. Backup DB/storage.
-6. Build Docker image.
-7. Restart container.
-8. Kiểm tra `/healthz`, `/readyz`.
-9. Tạo một job test nhỏ.
-10. Kiểm tra tải file output.
+### Queue kẹt
 
-## Rollback
+Kiểm tra:
 
-Trước mỗi deploy:
+- Admin overview queue depth/running depth.
+- Job `running` quá lâu.
+- Log legacy/STV.
+- Disk free.
 
-- Giữ image cũ.
-- Backup DB/storage.
-- Ghi lại version downloader legacy.
+Hành động:
 
-Rollback:
+- Restart service để recover `running` về `queued`.
+- Nếu job lỗi lặp lại, cancel job đó.
+- Giảm `JOB_CONCURRENCY` hoặc `LEGACY_MAX_WORKERS`.
 
-1. Stop container mới.
-2. Start image cũ.
-3. Nếu migration DB đã chạy, chỉ rollback app khi migration backward-compatible.
-4. Nếu migration destructive, restore backup.
-## Điều chỉnh triển khai theo hướng không auth
+### Disk gần đầy
 
-Không còn yêu cầu `SESSION_SECRET` hay flow đăng nhập trong phase đầu.
-Khi deploy, ưu tiên:
+Kiểm tra:
 
-- Rate limit ở Nginx hoặc Fastify.
-- Chỉ bind app nội bộ và đặt sau reverse proxy.
-- Giới hạn public traffic vào các endpoint tạo job/resolve.
-- Nếu cần khóa tạm, dùng allowlist hạ tầng hoặc basic auth tại reverse proxy,
-  không triển khai tài khoản người dùng trong app ở giai đoạn này.
+- `storage/books`.
+- `storage/legacy`.
+- `backups`.
+- Docker logs/images.
+
+Hành động:
+
+- Dừng nhận job mới.
+- Xóa backup cũ.
+- Xóa cache/temp.
+- Chuyển backup ra remote.
+
+### STV throttle
+
+Dấu hiệu:
+
+- Nhiều lỗi 429/5xx.
+- Job dịch fail hàng loạt.
+
+Hành động:
+
+- Giảm `TRANSLATION_CONCURRENCY=1`.
+- Tăng pause.
+- Tạm tắt tạo job dịch.
+- Thêm circuit breaker.

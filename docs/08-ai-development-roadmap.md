@@ -1,297 +1,215 @@
-# Roadmap cho AI/dev làm tuần tự
+# Roadmap triển khai cho AI/dev
 
-File này là kế hoạch triển khai theo thứ tự. AI hoặc dev nên làm từ trên xuống, không nhảy phase trừ khi có yêu cầu rõ.
+Tài liệu này là kế hoạch làm việc tuần tự. AI/dev nên làm theo từng phase, không nhảy cóc nếu phase trước chưa test xong.
 
-## Quy tắc làm việc
+## Phase 0: Chốt baseline
 
-- Mỗi phase phải build pass trước khi sang phase tiếp theo.
-- Không refactor lớn nếu phase đó chỉ cần thêm một lớp nhỏ.
-- Mọi endpoint mới phải có validation.
-- Mọi thay đổi production phải cập nhật `.env.example` và docs liên quan.
-- Không commit secret, binary production lớn hoặc file trong `storage`.
-- Với thay đổi backend quan trọng, thêm test trước hoặc cùng PR.
+Mục tiêu: biết trạng thái hiện tại trước khi sửa.
 
-## Phase 0: Chốt baseline deploy Linux
+Việc làm:
 
-Mục tiêu: app chạy được production trên VPS với Linux downloader.
+1. Chạy `npm install` nếu môi trường thiếu dependency.
+2. Chạy `npm run build`.
+3. Chạy `npm test`.
+4. Chạy backend local với `.env.example`.
+5. Test `/healthz`, `/readyz`, `/api/library`.
+6. Ghi lại lỗi hiện tại nếu có.
 
-Việc cần làm:
-
-1. Cập nhật Dockerfile hoặc compose để mount/copy Linux downloader.
-2. Nếu giữ Alpine, dùng `TomatoNovelDownloader-Linux_musl_amd64-v2.4.9`.
-3. Set `LEGACY_EXE_PATH=/app/tools/legacy/TomatoNovelDownloader`.
-4. Đảm bảo binary có quyền execute.
-5. Thêm `/healthz`.
-6. Thêm `/readyz` kiểm tra storage writable và legacy health nếu `LEGACY_BRIDGE=true`.
-7. Đổi production compose không publish app ra public trực tiếp, chỉ bind `127.0.0.1:8787`.
-8. Đổi `WEB_ORIGIN` production khỏi `*`.
-
-Files dự kiến:
-
-- `Dockerfile`
-- `docker-compose.yml`
-- `.env.example`
-- `apps/backend/src/server.ts`
-- `apps/backend/src/routes/apiRoutes.ts`
-- `docs/06-deployment-ops.md`
-
-Acceptance:
-
-```powershell
-npm run build
-npm audit --omit=dev
-```
-
-Trên VPS:
-
-```bash
-curl http://127.0.0.1:8787/healthz
-curl http://127.0.0.1:8787/readyz
-```
-
-## Phase 1: Chống spam trước public
-
-Mục tiêu: user bất kỳ vẫn có thể dùng app, nhưng không spam được job hay làm nghẽn hệ thống.
-
-Việc cần làm:
-
-1. Thêm validation schema cho body/query/params.
-2. Thêm rate limit cho resolve, create job, translate, SSE.
-3. Thêm quota và backpressure theo IP/toàn hệ thống.
-4. Thêm audit log cho action nhạy cảm.
-5. Sửa path safety bằng `relative()`.
-
-Files dự kiến:
-
-- `apps/backend/src/shared/pathSafety.ts`
-- `apps/backend/src/shared/schemas.ts`
-- `apps/backend/src/routes/apiRoutes.ts`
-- `apps/backend/src/services/spamGuard.ts`
-- `apps/backend/src/services/auditLogService.ts`
-- `apps/frontend/src/api.ts`
-- `apps/frontend/src/App.tsx`
-
-Acceptance:
-
-- Người dùng bình thường vẫn dùng app, nhưng tạo job bị rate limit nếu spam.
-- Quota chặn job vượt ngưỡng.
-- `WEB_ORIGIN=*` không còn là cấu hình production mẫu.
-- Test path traversal fail đúng.
-
-## Phase 2: Database và migration storage
-
-Mục tiêu: database là nguồn sự thật cho books, files, jobs.
-
-Việc cần làm:
-
-1. Chọn SQLite WAL cho giai đoạn đầu.
-2. Thêm migration framework.
-3. Tạo bảng `books`, `book_files`, `jobs`, `job_events`, `audit_logs`, `download_locks`.
-4. Thêm repository layer.
-5. Tạo script migrate storage hiện tại vào DB.
-6. Đổi `/api/library` đọc DB thay vì scan toàn bộ filesystem mỗi request.
-7. Thêm phân trang server-side cho thư viện.
-8. Lưu path relative, size, sha256.
-
-Files dự kiến:
-
-- `apps/backend/src/infra/db/*`
-- `apps/backend/src/modules/books/*`
-- `apps/backend/src/modules/jobs/*`
-- `scripts/migrate-storage-to-db.mjs`
-- `.env.example`
-
-Acceptance:
-
-- Chạy migration 2 lần không duplicate.
-- `/api/library?page=1&pageSize=20` trả nhanh.
-- Xóa cache memory vẫn đọc thư viện đúng từ DB.
-- File download dùng DB `book_files`.
-
-## Phase 3: Persistent queue và worker
-
-Mục tiêu: restart không mất job queued và active job được xử lý rõ.
-
-Việc cần làm:
-
-1. Tách worker khỏi request route.
-2. Tạo DB-backed queue.
-3. Implement lock job bằng transaction.
-4. Implement `cancel` và `retry`.
-5. Implement single-flight theo `bookId`.
-6. Ghi `job_events`.
-7. SSE đọc snapshot từ DB khi reconnect.
-8. Frontend reconnect SSE hoặc fallback polling.
-
-Files dự kiến:
-
-- `apps/backend/src/infra/queue/*`
-- `apps/backend/src/modules/jobs/*`
-- `apps/backend/src/services/jobService.ts`
-- `apps/frontend/src/api.ts`
-- `apps/frontend/src/components/JobStatus.tsx`
-
-Acceptance:
-
-- Tạo 5 job nhưng chỉ chạy tối đa `JOB_CONCURRENCY`.
-- Restart app, job queued vẫn còn.
-- Cancel job queued chuyển `canceled`.
-- Retry job failed tạo job mới hoặc reset đúng.
-- Cùng một bookId không có hai download active.
-
-## Phase 4: Storage artifact chuẩn
-
-Mục tiêu: file output ổn định, có checksum, không phụ thuộc title trong filename.
-
-Việc cần làm:
-
-1. Chuẩn hóa layout `storage/books/{bookId}/original.txt`.
-2. Ghi temp rồi rename atomic.
-3. Tính sha256 và lưu DB.
-4. Tách artifact EPUB thành cache/job rõ ràng.
-5. Thêm cleanup temp job cũ.
-6. Thêm manifest per book nếu cần restore không có DB.
-
-Files dự kiến:
-
-- `apps/backend/src/modules/storage/*`
-- `apps/backend/src/utils/file.ts`
-- `apps/backend/src/utils/epub.ts`
-- `apps/backend/src/services/jobService.ts`
-
-Acceptance:
-
-- Job fail không để file output hỏng ở path cuối.
-- Checksum lưu đúng.
-- Regenerate EPUB không duplicate record.
-- Download filename vẫn thân thiện với title.
-
-## Phase 5: Admin và quota
-
-Mục tiêu: vận hành được khi có 20-30 user.
-
-Việc cần làm:
-
-1. Thêm role `admin`.
-2. Thêm quota theo user: số job queued/running, số job mỗi ngày.
-3. Thêm admin dashboard.
-4. Admin xem job, cancel, retry.
-5. Admin xem disk usage, version legacy, queue depth.
-6. Ghi audit log cho action quan trọng.
-
-Files dự kiến:
-
-- `apps/backend/src/modules/admin/*`
-- `apps/frontend/src/components/AdminDashboard.tsx`
-- `apps/frontend/src/api.ts`
-- `apps/frontend/src/types.ts`
-
-Acceptance:
-
-- User thường không vào được admin.
-- Admin thấy queue realtime.
-- Quota chặn spam job.
-- Audit log ghi create/cancel/retry/download.
-
-## Phase 6: Observability và backup
-
-Mục tiêu: biết hệ thống đang khỏe hay không và restore được.
-
-Việc cần làm:
-
-1. Thêm structured logging với request id.
-2. Thêm `/metrics` nội bộ.
-3. Thêm disk usage check.
-4. Thêm backup script.
-5. Thêm restore checklist.
-6. Thêm alert cơ bản.
-
-Files dự kiến:
-
-- `apps/backend/src/infra/metrics/*`
-- `apps/backend/src/config/logger.ts`
-- `scripts/backup.sh`
-- `docs/07-testing-observability.md`
-- `docs/06-deployment-ops.md`
-
-Acceptance:
-
-- `/metrics` có job count, request duration, memory.
-- Backup chạy được trên server.
-- Restore thử trên thư mục tạm thành công.
-
-## Phase 7: Test và load test
-
-Mục tiêu: có bằng chứng hệ thống chịu được mục tiêu tải.
-
-Việc cần làm:
-
-1. Thêm Vitest.
-2. Thêm test path safety, parser, queue state.
-3. Tách `buildApp()` để integration test.
-4. Tạo fake legacy server.
-5. Thêm Playwright E2E.
-6. Thêm k6/autocannon scenario.
-7. Ghi kết quả load test vào docs.
-
-Files dự kiến:
-
-- `apps/backend/src/**/*.test.ts`
-- `apps/frontend/e2e/*`
-- `tests/fakes/*`
-- `tests/load/*`
-- `package.json`
-
-Acceptance:
-
-```powershell
-npm run build
-npm test
-npm audit --omit=dev
-```
-
-Load test pass:
-
-- 30 virtual users request nhẹ.
-- 5 user tạo job.
-- Active job không vượt config.
-
-## Trạng thái sau triển khai
-
-- Phase 0 đến Phase 5 đã hoàn tất theo phạm vi hiện tại của project.
-- Phase 6 đã hoàn tất với request id, `/metrics`, disk usage check và backup script.
-- Phase 7 đã có bộ test backend, load smoke, benchmark `autocannon` và fake legacy server mẫu.
-- Smoke test thực tế ngày 2026-05-15 xác nhận backend vẫn tải truyện và file trả 200.
-- Phần Playwright E2E và fake legacy integration nâng cao vẫn còn là bước tiếp theo nếu muốn khóa CI chặt hơn.
-
-## Phase 8: Tối ưu sau production
-
-Chỉ làm sau khi Phase 0-7 ổn.
-
-Ý tưởng:
-
-- Nginx `X-Accel-Redirect` để serve file tải lớn.
-- Object storage cho sách cũ.
-- PostgreSQL nếu cần multi-instance.
-- Redis/BullMQ nếu cần nhiều worker.
-- Search full-text theo title/author/tags.
-- Resume dịch theo chapter checkpoint.
-- Provider dịch nhiều nguồn và circuit breaker.
-- UI quản lý quota và vận hành.
-
-## Checklist release production đầu tiên
+Tiêu chí xong:
 
 - Build pass.
-- Test pass.
-- Audit pass.
-- CORS đúng domain.
-- Rate limit bật.
-- DB migration chạy.
-- Queue persistent.
-- Backup chạy.
-- `/healthz` và `/readyz` pass.
-- Nginx TLS bật.
-- Legacy port không public.
-- Disk còn trên 20%.
-- Load test baseline pass.
+- Test pass hoặc có danh sách lỗi rõ.
+- Có thể start backend.
 
+## Phase 1: Chuẩn hóa production Linux
+
+Mục tiêu: deploy được trên VPS Linux với legacy downloader đã test.
+
+Việc làm:
+
+1. Tách `.env.production.example` cho Linux.
+2. Bỏ path Windows khỏi production example.
+3. Cập nhật README deploy Linux.
+4. Kiểm tra Dockerfile có copy `apps/admin/dist` nếu muốn chạy admin.
+5. Test legacy binary trong container.
+6. Nếu Alpine không chạy binary, đổi runtime image sang Debian slim.
+7. Thêm hướng dẫn `chmod +x` cho binary.
+8. Đảm bảo compose mount `storage`, `backups`, legacy binary đúng.
+
+Tiêu chí xong:
+
+- Docker compose build được.
+- Container start được.
+- `/readyz` pass khi legacy binary tồn tại.
+- Download test nhỏ chạy được trên Linux.
+
+## Phase 2: Giảm rủi ro concurrency
+
+Mục tiêu: cấu hình mặc định không làm sập VPS.
+
+Việc làm:
+
+1. Đổi default `DEFAULT_TRANSLATION_CONCURRENCY` từ `50` xuống `2` hoặc `4`.
+2. Đảm bảo `.env.example` và code default không mâu thuẫn.
+3. Thêm log startup in ra config đã sanitize.
+4. Thêm guard nếu `JOB_CONCURRENCY`, `LEGACY_MAX_WORKERS`, `TRANSLATION_CONCURRENCY` quá cao trên production.
+5. Thêm `MAX_QUEUE_DEPTH` để chặn tạo job khi queue quá dài.
+6. Thêm disk free guard trước khi tạo download job.
+
+Tiêu chí xong:
+
+- Không có default nào tạo bão request.
+- Khi queue vượt ngưỡng, API trả 429 rõ.
+- Khi disk thấp, API trả lỗi rõ.
+
+## Phase 3: Database migration và index
+
+Mục tiêu: DB đủ ổn cho thư viện/job tăng.
+
+Việc làm:
+
+1. Thêm bảng `schema_migrations`.
+2. Viết migration runner.
+3. Chuyển schema hiện tại thành migration đầu tiên hoặc giữ createSchema rồi thêm migration version.
+4. Thêm index trong `03-database-storage.md`.
+5. Chuyển `listLibraryItems` sang SQL pagination/filter.
+6. Thêm test cho pagination/filter.
+7. Thêm retention cleanup cho `job_events` và `audit_logs`.
+
+Tiêu chí xong:
+
+- Migration chạy idempotent.
+- Test pass.
+- Library query không load toàn bộ DB khi có `page/pageSize`.
+
+## Phase 4: Backup/restore production
+
+Mục tiêu: backup có thể restore thật.
+
+Việc làm:
+
+1. Sửa `scripts/backup.mjs` để backup SQLite an toàn.
+2. Thêm manifest gồm app version, DB size, storage size, file count.
+3. Thêm retention cleanup backup cũ.
+4. Viết `scripts/restore-check.mjs` chạy trên thư mục backup.
+5. Document cron backup.
+6. Test backup/restore local.
+
+Tiêu chí xong:
+
+- Backup không corrupt DB.
+- Restore check pass.
+- Admin overview hiển thị backup status đúng.
+
+## Phase 5: Security hardening
+
+Mục tiêu: public Internet an toàn hơn.
+
+Việc làm:
+
+1. Thêm trusted proxy handling cho `x-forwarded-for`.
+2. Thêm body size limit.
+3. Siết input URL chỉ nhận domain/pattern hợp lệ.
+4. Thêm basic auth hoặc access token cho job tạo mới nếu cần public.
+5. Chuyển rate limit/quota sang persistent store.
+6. Thêm config `PUBLIC_JOB_CREATION_ENABLED`.
+7. Thêm security headers nếu backend phục vụ frontend.
+8. Cập nhật reverse proxy docs.
+
+Tiêu chí xong:
+
+- Client không giả IP để vượt rate limit.
+- Admin không truy cập được nếu không auth.
+- Metrics/legacy/admin port không public.
+
+## Phase 6: Queue reliability
+
+Mục tiêu: job không kẹt và retry có kiểm soát.
+
+Việc làm:
+
+1. Thêm `error_code` chuẩn khi fail.
+2. Thêm job timeout theo loại job.
+3. Thêm retry/backoff cho legacy/STV request transient.
+4. Thêm lock theo book ID.
+5. Thêm pause/resume worker cho admin.
+6. Thêm reconcile legacy job sau restart nếu khả thi.
+7. Thêm test recover running jobs.
+
+Tiêu chí xong:
+
+- Restart không làm job kẹt vĩnh viễn.
+- Job timeout rõ.
+- Retry không vô hạn.
+- Nhiều request cùng book không tạo nhiều job trùng.
+
+## Phase 7: Observability
+
+Mục tiêu: nhìn thấy vấn đề trước khi user báo lỗi.
+
+Việc làm:
+
+1. Mở rộng `/metrics`.
+2. Thêm legacy health metric.
+3. Thêm STV error metric.
+4. Thêm oldest queued age.
+5. Thêm disk guard metric.
+6. Cập nhật admin dashboard.
+7. Thêm alert script nếu chưa dùng Prometheus.
+
+Tiêu chí xong:
+
+- Biết queue đang kẹt hay không.
+- Biết disk có sắp đầy không.
+- Biết backup fail không.
+- Biết STV/legacy đang lỗi không.
+
+## Phase 8: Worker split tùy nhu cầu
+
+Chỉ làm phase này nếu phase 1-7 đã ổn và vẫn cần scale.
+
+Việc làm:
+
+1. Thêm `PROCESS_ROLE=api|worker|all`.
+2. API role không chạy queue timer.
+3. Worker role không serve frontend nếu không cần.
+4. Đảm bảo DB claim job an toàn.
+5. Đảm bảo chỉ một legacy downloader trên mỗi worker.
+6. Viết systemd/compose service riêng cho worker.
+
+Tiêu chí xong:
+
+- Có thể chạy API và worker riêng.
+- Một VPS vẫn chạy 1 worker.
+- Có đường nâng cấp lên VPS lớn hơn hoặc nhiều worker.
+
+## Phase 9: User/account model
+
+Chỉ cần nếu mở rộng user thật.
+
+Việc làm:
+
+1. Thêm bảng `users`.
+2. Thêm session/API token.
+3. Gắn job với `user_id`.
+4. Quota theo user thay vì IP.
+5. Admin role.
+6. Audit log có user.
+
+Tiêu chí xong:
+
+- Quota công bằng hơn.
+- Truy vết được user tạo job.
+- Có thể khóa user abuse.
+
+## Thứ tự ưu tiên ngắn gọn
+
+1. Production Linux deploy.
+2. Concurrency safe defaults.
+3. DB index/migration.
+4. Backup/restore.
+5. Security hardening.
+6. Queue reliability.
+7. Observability.
+8. Split worker nếu cần.
+9. User model nếu public rộng.

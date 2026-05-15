@@ -1,232 +1,182 @@
 # Testing và observability
 
-Production không chỉ là code chạy được. Cần biết hệ thống hỏng ở đâu, vì sao, và có thể rollback.
+## Hiện trạng test
 
-## Test hiện trạng
+Project đã có:
 
-Đã chạy ngày 2026-05-15:
+- Unit test backend bằng Vitest.
+- Test path safety.
+- Test spam guard.
+- Test metrics service.
+- Test parser chương.
+- Test dịch metadata.
+- Load smoke test bằng `autocannon`.
 
-```powershell
-npm run build
-npm audit
-npm audit --omit=dev
-```
+Đây là nền tốt nhưng chưa đủ production.
 
-Kết quả:
+## Test cần bổ sung
 
-- Build pass.
-- Audit không có vulnerability.
+### 1. Integration test API
 
-Thiếu:
+Cần test các luồng:
 
-- Unit test.
-- Integration test backend.
-- E2E test frontend.
-- Load test.
-- Test Docker production với Linux downloader.
+- Resolve book hợp lệ.
+- Resolve input không hợp lệ.
+- Tạo download job.
+- Poll job status.
+- SSE job events.
+- Download file khi job completed.
+- Translate từ job completed.
+- Translate từ library.
+- Rate limit trả 429.
+- Quota vượt giới hạn trả 429.
 
-## Test cần thêm
+Nên mock legacy downloader bằng `tests/fakes/legacy-server.mjs`.
 
-### Unit test backend
+### 2. Persistence/restart test
 
-Ưu tiên test:
+Test bắt buộc cho production:
 
-- Parse bookId từ input/link.
-- Path safety.
-- Sanitize filename.
-- Split TXT thành chapter.
-- Compose TXT.
-- Translate paragraph batching.
-- Queue state transition.
-- Storage migration.
+1. Tạo job queued.
+2. Tắt app.
+3. Mở app.
+4. Job vẫn tồn tại.
+5. Job running cũ được recover về queued.
+6. Worker xử lý tiếp hoặc fail rõ ràng.
 
-Tool đề xuất:
+### 3. Backup/restore test
 
-- Vitest.
-- `tsx` hoặc native TS config.
+Không coi backup là xong nếu chưa restore thử.
 
-### Integration test backend
+Test:
 
-Test Fastify app bằng inject:
+- Tạo vài book/job.
+- Chạy backup.
+- Restore sang thư mục tạm.
+- Start app với `DATA_DIR` restored.
+- Kiểm tra library và file tải được.
 
-- `POST /api/books/resolve` với input rỗng trả lỗi chuẩn.
-- `POST /api/jobs/download` tạo job queued.
-- `GET /api/jobs/:id` trả snapshot.
-- `GET /api/library` đọc từ DB/storage test.
-- `GET /api/books/:bookId/files/...` không cho path traversal.
+### 4. Load test thực tế
 
-Nên tách `buildApp()` khỏi `server.listen()` để test không cần mở port.
+`tests/load/autocannon.mjs` hiện test health/library. Cần thêm kịch bản:
 
-### Fake legacy server
+- 30 connection đọc status/library.
+- 10 SSE connection giữ lâu.
+- 5 request resolve/phút.
+- 3 request tạo download job trong 10 phút.
+- 1-2 job thật chạy song song.
+- Tải file trong lúc worker bận.
 
-Không test production bằng API thật của Fanqie mỗi lần CI.
+Không nên load test bằng cách tạo quá nhiều job thật vào Fanqie/STV nếu có rủi ro bị throttle.
 
-Tạo fake legacy server:
+## Tiêu chí pass production nhỏ
 
-- `GET /api/status`
-- `GET /api/preview/:bookId`
-- `POST /api/jobs`
-- `GET /api/jobs`
+Trên VPS hiện tại:
 
-Fake server cho phép:
+- Health p95 dưới 200ms.
+- Library p95 dưới 500ms với thư viện hiện tại.
+- Job create p95 dưới 1000ms khi queue chưa quá tải.
+- Không có memory leak rõ sau 2 giờ.
+- RAM dưới 3GB khi chạy 2 job nặng.
+- CPU không giữ 100% liên tục quá 10 phút nếu không có lý do.
+- Queue không kẹt sau restart.
+- Backup chạy không làm app treo lâu.
 
-- Simulate job done.
-- Simulate failed.
-- Simulate timeout.
-- Simulate output file missing.
+## Metrics cần theo dõi
 
-### E2E frontend
+Hiện `/metrics` đã có request metrics và operational metrics. Nên đảm bảo có các chỉ số:
 
-Dùng Playwright:
+- Request count theo method/route/status.
+- Request duration p50/p95/p99.
+- Queue depth.
+- Running jobs.
+- Completed jobs.
+- Failed jobs last 1h/24h.
+- Error events last 1h/24h.
+- Average download throughput.
+- Disk total/used/free.
+- DB size.
+- Books count.
+- Book files count.
+- Audit logs count.
+- Legacy health.
+- STV error rate.
 
-- Resolve book.
-- Start download.
-- Xem progress.
-- Vào thư viện.
-- Tải file.
-- Start translate.
-- Xử lý lỗi job.
+## Alert khuyến nghị
 
-E2E nên chạy với backend fake để ổn định.
+Tối thiểu cần alert:
 
-## Load test
-
-Tool đề xuất:
-
-- `autocannon` cho endpoint HTTP.
-- `k6` cho scenario người dùng.
-
-Scenario tối thiểu:
-
-1. 30 virtual users mở `/`.
-2. 30 virtual users gọi `/api/library`.
-3. 10 virtual users resolve book.
-4. 5 virtual users tạo job download.
-5. 10 virtual users tải file đã có.
-6. 10 connection SSE theo dõi job.
-
-Tiêu chí pass ban đầu:
-
-- Request nhẹ p95 dưới 500 ms.
-- Không có 5xx không giải thích được.
-- Memory không tăng liên tục sau 15-30 phút.
-- Queue không chạy quá `JOB_CONCURRENCY`.
-- Job không duplicate theo cùng `bookId`.
-- App restart không mất job queued.
-
-## Metrics cần có
-
-Endpoint nội bộ:
-
-```text
-GET /metrics
-```
-
-Metrics:
-
-- `http_requests_total`
-- `http_request_duration_seconds`
-- `jobs_total{type,status}`
-- `jobs_active{type}`
-- `jobs_queued{type}`
-- `job_duration_seconds{type}`
-- `legacy_requests_total{status}`
-- `legacy_request_duration_seconds`
-- `translation_requests_total{status}`
-- `translation_request_duration_seconds`
-- `storage_free_bytes`
-- `storage_used_bytes`
-- `process_resident_memory_bytes`
-- `nodejs_eventloop_lag_seconds`
-
-Nếu chưa dùng Prometheus, ít nhất log các số này định kỳ mỗi phút.
-
-## Logs cần có
-
-Mỗi request:
-
-- request id
-- method
-- path
-- status code
-- duration
-- user id nếu có
-- ip
-
-Mỗi job:
-
-- job id
-- type
-- book id
-- user id
-- status transition
-- attempt
-- duration
-- error code/message
-
-Không log:
-
-- Session token.
-- Password.
-- API key.
-- Nội dung truyện full.
-
-## Alert tối thiểu
-
-Cần biết các tình huống:
-
-- App down.
-- `/readyz` fail.
-- Disk trên 80%.
-- Memory trên 85%.
-- Queue dài hơn 20 job.
-- Job failed rate trên 30% trong 15 phút.
-- Legacy downloader không health.
+- Service down: `/healthz` fail 2 lần liên tiếp.
+- Not ready: `/readyz` fail 3 lần liên tiếp.
+- Disk free dưới 8GB.
+- Queue depth trên 50 trong 15 phút.
+- Failed jobs trên 10 trong 1 giờ.
+- Error event tăng bất thường.
 - Backup fail.
+- RAM trên 85% trong 10 phút.
 
-Có thể bắt đầu bằng:
+Nếu chưa cài Prometheus/Grafana, có thể dùng cron script local gửi Telegram/email.
 
-- Uptime Kuma cho HTTP health.
-- Cron gửi log/error qua Telegram/Discord/email.
-- Node exporter + Prometheus/Grafana khi có thời gian.
+## Logging
 
-## Dashboard admin riêng
+Log hiện dùng Fastify logger và legacy stdout/stderr. Cần chuẩn hóa:
 
-Nên tách dashboard admin sang một cổng riêng cho:
+- Mỗi request có `x-request-id`.
+- Mỗi job log có `jobId`, `bookId`, `kind`.
+- Mỗi legacy request log có `legacyJobId`.
+- Không log secret.
+- Không log toàn bộ nội dung truyện.
 
-- Số job queued/running/failed.
-- Danh sách job mới nhất.
-- Retry/cancel.
-- Disk usage.
-- Version app và version legacy downloader.
-- Trạng thái DB/storage/legacy.
+Log rotation:
 
-Dashboard admin riêng giúp vận hành khi chưa có Grafana mà không làm lộ tab quản trị trong app người dùng.
+- Docker json-file `max-size=10m`, `max-file=5` là hợp lý ban đầu.
+- Nếu chạy systemd, cấu hình journald limit.
 
-## CI khuyến nghị
+## Dashboard admin cần có
 
-Pipeline:
+Admin overview nên hiển thị:
 
-```text
+- Queue depth/running depth.
+- Recent jobs.
+- Fail rate.
+- Disk free.
+- Backup status.
+- Current config quan trọng.
+- Legacy health.
+- STV health/circuit breaker state.
+
+Thêm thao tác admin:
+
+- Cancel job.
+- Retry job.
+- Pause worker.
+- Resume worker.
+- Disable new translate jobs.
+- Disable new download jobs.
+
+Các thao tác này phải có auth và audit log.
+
+## CI/CD tối thiểu
+
+Pipeline nên chạy:
+
+```bash
 npm ci
 npm run build
-npm audit --omit=dev
 npm test
-docker build
 ```
 
-Nếu có GitHub Actions:
+Trước khi deploy production:
 
-- Cache npm.
-- Upload artifact test report.
-- Không đưa `.env` vào CI log.
+```bash
+npm run test:load
+```
 
-## Trạng thái hiện tại
+Nếu có Docker:
 
-- Đã thêm `GET /metrics` ở backend, trả Prometheus text nội bộ.
-- Đã có request id trên response và metrics request duration.
-- Đã có backup script `scripts/backup.mjs` và wrapper `scripts/backup.sh`.
-- Đã thêm Vitest cho backend với test path safety, spam guard và metrics.
-- Đã có load smoke script `tests/load/smoke.mjs` để kiểm tra flow tải truyện thực tế.
-- Đã có benchmark script `tests/load/autocannon.mjs` để đo tải HTTP.
-- Đã thêm fake legacy server mẫu ở `tests/fakes/legacy-server.mjs` cho luồng test/fake CI.
+```bash
+docker compose build
+docker compose up -d
+curl -f http://127.0.0.1:8787/healthz
+curl -f http://127.0.0.1:8787/readyz
+```

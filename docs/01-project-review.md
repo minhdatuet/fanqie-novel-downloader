@@ -1,203 +1,154 @@
 # Review hiện trạng project
 
-Ngày review: 2026-05-15.
+## Tổng quan cấu trúc
 
-Lệnh đã chạy:
+Project hiện tại là monorepo Node.js/TypeScript:
 
-```powershell
-npm run build
-npm audit
-npm audit --omit=dev
-```
+- `apps/backend`: Fastify backend, API, job service, SQLite, metrics, bridge sang downloader gốc.
+- `apps/frontend`: Vite React frontend cho người dùng tải/dịch truyện.
+- `apps/admin`: Vite React admin dashboard.
+- `scripts`: migrate storage, backup, copy/start legacy downloader.
+- `tests`: unit test backend và load smoke test bằng `autocannon`.
+- `storage`: dữ liệu runtime, truyện, job snapshot, SQLite `app.db`.
+- `tools/legacy`: downloader gốc hoặc binary tương thích Linux/Windows.
+- `Dockerfile`, `docker-compose.yml`: build/deploy container đơn.
 
-Kết quả:
+Kiến trúc hiện tại đã có nền tảng tốt cho MVP:
 
-- Build backend và frontend thành công.
-- `npm audit` không báo vulnerability tại thời điểm review.
-- Project chưa có test tự động.
+- API Fastify tương đối gọn.
+- Có schema validate input cơ bản.
+- Có job queue trong backend.
+- Có SQLite WAL.
+- Có rate limit đơn giản theo IP.
+- Có audit log.
+- Có metrics endpoint nội bộ.
+- Có Docker deployment.
+- Có backup script.
+- Có unit test cho một số phần nhạy cảm như path safety, spam guard, metrics, parser.
 
-## Cấu trúc hiện tại
+## Luồng xử lý hiện tại
 
-```text
-.
-├── apps
-│   ├── backend
-│   │   ├── src
-│   │   │   ├── config.ts
-│   │   │   ├── server.ts
-│   │   │   ├── routes
-│   │   │   ├── services
-│   │   │   └── utils
-│   │   └── package.json
-│   └── frontend
-│       ├── src
-│       │   ├── App.tsx
-│       │   ├── api.ts
-│       │   ├── components
-│       │   └── styles.css
-│       └── package.json
-├── docker-compose.yml
-├── Dockerfile
-├── scripts
-├── storage
-└── tools
-```
+1. User nhập ID/link truyện.
+2. Backend gọi legacy downloader hoặc Fanqie service để resolve metadata.
+3. User tạo job download.
+4. `JobService` ghi job vào SQLite và snapshot JSON.
+5. Queue worker trong process backend claim job `queued`.
+6. Nếu bật legacy bridge, backend khởi động binary downloader gốc ở `127.0.0.1:18424`.
+7. Backend poll legacy job cho đến khi done/failed.
+8. Backend chuẩn hóa output vào `storage/books` và ghi metadata vào DB.
+9. User có thể tải file gốc hoặc tạo job dịch.
+10. Job dịch đọc chương, gọi STV hoặc mock translator, lưu file dịch.
 
-## Backend
+## Điểm mạnh
 
-Backend dùng Fastify + TypeScript, entrypoint là `apps/backend/src/server.ts`.
+- Đã có cơ chế queue thay vì xử lý download trực tiếp trong request.
+- `JOB_CONCURRENCY` giúp giới hạn số job nặng chạy đồng thời.
+- SQLite dùng WAL, đủ tốt cho một instance nhỏ nếu truy vấn/ghi không quá nặng.
+- Path download có `assertInsideBase`, giảm rủi ro path traversal.
+- Admin portal được bind mặc định vào `127.0.0.1`.
+- Metrics endpoint chỉ cho local request.
+- Có audit log hành vi quan trọng.
+- Docker compose bind port backend vào `127.0.0.1`, phù hợp chạy sau Nginx/Caddy.
 
-Các thành phần chính:
+## Điểm yếu cần ưu tiên
 
-- `config.ts`: đọc env, tạo thư mục dữ liệu.
-- `apiRoutes.ts`: định nghĩa API resolve sách, tạo job tải, tạo job dịch, SSE progress, thư viện, tải file.
-- `JobService`: quản lý job trong memory, queue trong memory, bridge downloader legacy hoặc fallback `FanqieService`.
-- `LegacyService`: spawn downloader legacy ở chế độ server, gọi API legacy qua `127.0.0.1`.
-- `FanqieService`: fallback tải trực tiếp từ Fanqie khi có `FANQIE_API_ENDPOINTS`.
-- `TranslatorService`: mock translation hoặc gọi STV API.
-- `LibraryService`: scan filesystem để dựng thư viện.
+### 1. Queue và quota còn phụ thuộc RAM/process
 
-Điểm mạnh:
+`JobService` giữ `jobs`, `cancelRequestedJobs`, `legacyJobMap`, event listeners và active task trong RAM. Job được persist vào SQLite, nhưng một số state runtime không bền vững qua restart.
 
-- Code backend TypeScript strict, dễ đọc, tách service tương đối rõ.
-- Có queue nội bộ bằng `JOB_CONCURRENCY`, không chạy tất cả job cùng lúc.
-- Có SSE để frontend nhận progress realtime, có fallback polling.
-- Có `assertInsideBase` khi tải file, đã có ý thức chống path traversal.
-- Có cache preview metadata và cache thư viện ngắn.
-- Build production hiện pass.
+Tác động:
 
-Rủi ro chính:
+- Restart có thể làm mất listener SSE, cancel state, map legacy job.
+- Nếu legacy downloader vẫn chạy sau restart, backend mới khó reconcile chính xác.
+- Chạy nhiều backend instance sẽ tranh chấp và không chia sẻ state RAM.
 
-- Job queue nằm trong RAM, restart mất job đang chạy và queue chờ.
-- Job record có ghi JSON vào `storage/jobs`, nhưng server không load lại và không resume.
-- Không có database để quản lý user, quota, job, trạng thái file, lịch sử lỗi.
-- Không có auth, bất kỳ ai truy cập được app đều có thể tạo job tải/dịch.
-- Không có rate limit, user có thể spam job khiến VPS quá tải.
-- Không có validation schema ở route, lỗi trả về còn phụ thuộc exception mặc định.
-- `assertInsideBase` đang dùng `target.startsWith(base)`, cần đổi sang check bằng `relative()` để tránh prefix path.
-- `DEFAULT_TRANSLATION_CONCURRENCY` trong code là `50`, trong `.env.example` là `12`; cần đồng bộ vì 50 quá cao cho VPS.
-- `LegacyService` spawn binary từ env, nhưng Docker runtime hiện không copy Linux binary vào image.
-- `TOMATO_WEB_PASSWORD` đang set rỗng khi spawn legacy. Phải đảm bảo legacy chỉ bind `127.0.0.1` và không expose port.
-- Không có timeout tổng cho job dài, không có cancel/retry ở cấp job production.
-- `LibraryService` scan file đệ quy. Khi thư viện lớn, request `/api/library` sẽ tốn I/O.
+### 2. SQLite đang dùng API sync trong request path
 
-## Frontend
+`node:sqlite` `DatabaseSync` chạy đồng bộ. Với tải 20-30 user, vẫn có thể chấp nhận nếu truy vấn nhỏ, nhưng khi library lớn, audit nhiều, job event nhiều, request file nhiều, event loop có thể bị block.
 
-Frontend dùng Vite + React + TypeScript.
+Tác động:
 
-Luồng chính:
+- Latency tăng khi DB lớn.
+- Một request admin/list library có thể ảnh hưởng request thường.
+- Dễ gặp lock hoặc pause nếu backup copy DB không đúng cách.
 
-1. Người dùng nhập link hoặc bookId.
-2. Frontend kiểm tra thư viện theo bookId.
-3. Nếu chưa có, gọi resolve để lấy metadata.
-4. Người dùng tạo job tải.
-5. Frontend subscribe SSE.
-6. Sau khi tải xong, người dùng có thể dịch.
-7. Thư viện cho tải TXT hoặc tạo EPUB on demand.
+### 3. Rate limit và quota là in-memory
 
-Điểm mạnh:
+`SpamGuardService` và `QuotaService` hiện dùng RAM. Khi restart sẽ reset quota. Khi scale nhiều instance sẽ không đồng bộ.
 
-- Luồng UX đủ dùng cho bản MVP.
-- Đã có tab tải và tab thư viện.
-- Có phân trang client-side cho thư viện.
-- API client tách riêng trong `api.ts`.
+Tác động:
 
-Rủi ro:
+- Không đủ mạnh để chống abuse.
+- Người dùng có thể vượt quota bằng restart hoặc khi có nhiều instance.
 
-- Không có login/logout hoặc phân quyền.
-- Thư viện trả toàn bộ item rồi phân trang client-side; khi có nhiều sách sẽ chậm.
-- Không có màn hình admin theo dõi queue, job lỗi, retry, cancel.
-- Không có xử lý SSE reconnect thông minh. `onerror` hiện close luôn.
-- Type `LibraryItem` frontend thiếu một số field backend có trả như `coverUrl`, `description`, `tags`.
+### 4. Auth/user model chưa rõ
 
-## Docker và deploy
+API public hiện chủ yếu dựa vào rate limit IP. Admin API dựa vào header token nội bộ do admin proxy sinh ra trong runtime.
 
-Dockerfile hiện dùng `node:24-alpine`.
+Tác động:
 
-Điểm mạnh:
+- Chưa có user identity, API key, session hoặc role.
+- Không truy vết quota theo user ổn định.
+- Nếu reverse proxy cấu hình sai, có thể lộ endpoint nhạy cảm.
 
-- Multi-stage build gọn.
-- Runtime chỉ cài backend production dependency.
-- Backend serve được frontend build.
+### 5. Cấu hình production chưa tách rõ Windows/Linux
 
-Rủi ro:
+`.env.example` còn có path Windows. Docker compose mount Linux binary nhưng Dockerfile chưa copy admin dist và chưa copy legacy binary vào image.
 
-- Runtime image không copy `tools/legacy`, nên legacy bridge sẽ bị disable nếu không mount binary.
-- Nếu dùng Alpine thì nên dùng asset `Linux_musl_amd64`. Nếu dùng Debian/Ubuntu slim thì dùng asset `Linux_amd64`.
-- Chưa có `HEALTHCHECK`.
-- Container chạy mặc định bằng user root.
-- `docker-compose.yml` đặt `WEB_ORIGIN="*"`, không phù hợp production.
-- Chưa mount config/secrets riêng cho downloader Linux.
-- Chưa có Nginx/TLS/reverse proxy trong cấu hình mẫu.
+Tác động:
 
-## Storage hiện tại
+- Dễ deploy sai đường dẫn trên VPS.
+- Admin build có thể không được phục vụ trong runtime image nếu Dockerfile không copy `apps/admin/dist`.
+- Binary legacy cần quyền execute và đúng libc.
 
-Storage hiện dùng filesystem:
+### 6. Translation concurrency mặc định trong code quá cao
 
-```text
-storage/
-├── books/
-├── book-meta/
-├── cache/
-│   └── directory/
-├── jobs/
-└── legacy/
-```
+`DEFAULT_TRANSLATION_CONCURRENCY = 50`, trong khi `.env.example` đặt `4`. Nếu production thiếu env hoặc env bị đọc sai, VPS 2 CPU/4GB có thể tạo quá nhiều request STV.
 
-Điểm mạnh:
+Tác động:
 
-- Dễ backup bằng snapshot hoặc rsync.
-- File truyện nằm độc lập, không phụ thuộc DB để đọc nội dung.
+- STV throttle, timeout hoặc ban.
+- RAM/CPU tăng đột biến.
+- Job fail hàng loạt.
 
-Rủi ro:
+### 7. Backup hiện tại copy toàn bộ thư mục runtime
 
-- Không có index DB nên thư viện phụ thuộc scan file.
-- Không có checksum để biết file hỏng hoặc duplicate.
-- Không có write atomic rõ ràng cho toàn bộ artifact.
-- Không có quota theo user hoặc cleanup policy.
-- Không có backup manifest để restore đúng metadata.
+Script `backup.mjs` dùng `cp` toàn bộ `storage`. Với SQLite đang chạy và file lớn, bản backup có thể không nhất quán nếu copy trực tiếp file DB trong lúc ghi.
 
-## Khả năng chịu tải với VPS hiện tại
+Tác động:
 
-VPS 2 CPU / 4 GB RAM / 100 Mbps đủ cho:
+- Restore có thể lỗi hoặc mất transaction gần nhất.
+- Backup lâu khi thư viện lớn.
+- Không có retention/cleanup.
 
-- 20-30 user mở web, xem thư viện, tải file nhẹ.
-- 2-3 job tải/dịch chạy đồng thời.
-- Các job còn lại xếp hàng và có progress rõ ràng.
+### 8. Observability còn tối thiểu
 
-VPS này không phù hợp để:
+Đã có `/metrics`, `/healthz`, `/readyz`, admin overview. Nhưng thiếu:
 
-- Cho 20-30 job tải hoặc dịch chạy đồng thời.
-- Dịch hàng trăm chương với concurrency cao mà không giới hạn.
-- Stream nhiều file lớn đồng thời nếu 100 Mbps bị saturate.
+- Alert khi disk gần đầy.
+- Alert queue bị backlog.
+- Alert fail rate tăng.
+- Log correlation đầy đủ.
+- Dashboard chuẩn cho production.
 
-Khuyến nghị baseline production:
+## Rủi ro theo mục tiêu 20-30 user đồng thời
 
-```env
-JOB_CONCURRENCY=2
-LEGACY_MAX_WORKERS=6
-TRANSLATION_CONCURRENCY=4
-TRANSLATION_PARAGRAPH_BATCH_SIZE=12
-TRANSLATION_PARAGRAPH_BATCH_PAUSE_MS=300
-REQUEST_TIMEOUT_MS=30000
-WEB_ORIGIN=https://ten-mien-cua-ban.example
-```
+20-30 user đồng thời không đồng nghĩa 20-30 job download chạy đồng thời. Với VPS hiện tại, cấu hình hợp lý là:
 
-Sau load test có thể tăng:
+- 20-30 user xem UI, xem library, theo dõi job.
+- 2 job nặng download/dịch chạy đồng thời.
+- 6 worker nội bộ của legacy downloader cho mỗi process.
+- Các request còn lại nằm trong queue hoặc bị quota/rate limit.
 
-- `JOB_CONCURRENCY=3` nếu CPU, RAM, network còn dư.
-- `LEGACY_MAX_WORKERS=8` nếu Fanqie/legacy không throttle.
-- `TRANSLATION_CONCURRENCY=6` nếu STV ổn định và RAM còn dư.
+Nếu để 20-30 job tải/dịch chạy thật sự cùng lúc, cấu hình VPS hiện tại không phù hợp. Khi đó cần tách worker, tăng VPS hoặc chuyển sang queue/distributed worker.
 
-## Việc cần sửa sớm nhất
+## Kết luận
 
-1. Đóng gói Linux downloader đúng cách trong Docker hoặc mount binary rõ ràng.
-2. Thêm auth tối thiểu trước khi public.
-3. Đổi `WEB_ORIGIN` khỏi `*`.
-4. Thêm rate limit và job quota.
-5. Thay in-memory queue bằng persistent queue hoặc ít nhất DB-backed job state.
-6. Thêm database schema cho books/jobs/files/users.
-7. Sửa path safety bằng `relative()`.
-8. Thêm healthcheck, backup, log rotation, metrics.
-9. Thêm test tự động và load test.
+Project đã đủ nền để phát triển production nhỏ, nhưng cần khóa lại các điểm vận hành trước:
 
+- Chuẩn hóa deploy Linux.
+- Cố định cấu hình concurrency an toàn.
+- Làm queue/DB/backup đáng tin cậy hơn.
+- Thêm auth/rate limit bền vững.
+- Hoàn thiện observability.
+- Viết runbook vận hành.

@@ -1,179 +1,175 @@
-# Bảo mật và hardening
+# Bảo mật production
 
-Nếu app được public Internet, bảo mật phải làm trước khi thêm nhiều tính năng.
+## Bề mặt tấn công hiện tại
 
-## Rủi ro hiện tại
+Các endpoint cần chú ý:
 
-| Mức | Rủi ro | Hiện trạng | Cần làm |
-| --- | --- | --- | --- |
-| Cao | Không có auth | Ai truy cập được URL đều tạo job | Thêm rate limit, quota và validation |
-| Cao | CORS mở | `WEB_ORIGIN="*"` trong compose | Chỉ cho domain production |
-| Cao | Không rate limit | Có thể spam download/translate | Thêm rate limit và quota |
-| Cao | Queue in-memory | Restart mất queue | Persistent DB queue |
-| Cao | Legacy password rỗng | An toàn chỉ khi bind localhost | Không expose legacy port |
-| Trung bình | Path safety prefix | Dùng `startsWith(base)` | Dùng `relative()` và check segment |
-| Trung bình | Thiếu schema validation | Body/query tự parse | Dùng Zod hoặc TypeBox |
-| Trung bình | Thiếu security headers | Chưa có helmet | Thêm headers qua Nginx/Fastify |
-| Trung bình | Thiếu audit log | Không biết ai tạo job | Ghi audit logs |
-| Trung bình | Không giới hạn file/queue | Có thể đầy disk | Quota, cleanup, alert disk |
+- Public API tạo job tải/dịch.
+- Public API tải file.
+- SSE job events.
+- Proxy ảnh preview từ legacy downloader.
+- Admin API `/api/admin/overview`.
+- Metrics `/metrics`.
+- Legacy downloader API `127.0.0.1:18424`.
+- Storage file trong `DATA_DIR`.
 
-## Phạm vi hiện tại không có auth
+## Ưu tiên bảo mật
 
-Project hiện tại không cần đăng ký hay đăng nhập.
-Lớp bảo vệ chính là:
+### 1. Reverse proxy và TLS
 
-- Rate limit theo IP.
-- Validation schema cho toàn bộ API.
-- Quota theo IP và theo hệ thống.
-- Backpressure khi queue đầy.
-- Audit log cho thao tác nhạy cảm.
+Không public Node backend trực tiếp. Cấu hình:
 
-Không ưu tiên session cookie, CSRF token hay invitation code trong giai đoạn đầu.
+- Internet chỉ vào port 80/443.
+- Backend bind `127.0.0.1:8787`.
+- Admin bind `127.0.0.1:10052`.
+- Legacy bind `127.0.0.1:18424`.
+- Metrics chỉ local.
 
-## CORS
+Caddy là lựa chọn đơn giản:
 
-Production:
+```caddyfile
+ten-mien-cua-ban.example {
+    encode zstd gzip
 
-```env
-WEB_ORIGIN=https://ten-mien-cua-ban.example
+    @admin path /admin* /api/admin/*
+    basicauth @admin {
+        admin <bcrypt-hash>
+    }
+
+    reverse_proxy 127.0.0.1:8787
+
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    }
+}
 ```
 
-Không dùng:
+### 2. Trusted proxy cho IP
 
-```env
-WEB_ORIGIN=*
-```
+Backend hiện đọc `x-forwarded-for` trực tiếp. Chỉ được tin header này nếu request đến từ reverse proxy nội bộ.
 
-Nếu chỉ serve frontend từ cùng Fastify/Nginx, có thể tắt CORS cho production hoặc chỉ allow chính domain.
+Cần làm:
 
-## Rate limit
+- Cấu hình Fastify trust proxy hoặc tự kiểm tra `request.ip` là proxy IP.
+- Nếu request không đến từ proxy tin cậy, bỏ qua `x-forwarded-for`.
+- Proxy set `X-Real-IP` và `X-Forwarded-For`.
 
-Endpoint cần giới hạn:
+Nếu không làm, client có thể giả IP để vượt rate limit.
 
-- `POST /api/books/resolve`: 30 lần/phút/IP.
-- `POST /api/jobs/download`: 5 lần/10 phút/IP, theo quota queue.
-- `POST /api/books/:bookId/translate`: 5 lần/10 phút/IP.
-- `GET /api/jobs/:id/events`: giới hạn connection SSE theo IP.
+### 3. Auth cho admin
 
-Có thể dùng:
+Admin token runtime hiện chỉ được sinh trong process và proxy qua admin server. Cần thêm lớp bảo vệ ngoài:
 
-- `@fastify/rate-limit` cho API.
-- Nginx `limit_req` cho lớp ngoài.
+- Basic auth tại reverse proxy.
+- Hoặc admin session/password trong backend.
+- Hoặc VPN/SSH tunnel chỉ admin mới truy cập.
 
-## Validate input
+Khuyến nghị cho VPS nhỏ: dùng Caddy basic auth hoặc Cloudflare Access.
 
-Dùng Zod hoặc TypeBox cho toàn bộ route.
+### 4. Auth hoặc API key cho job nặng
 
-Ví dụ rule:
+Nếu public cho cộng đồng, rate limit IP chưa đủ. Nên thêm:
 
-- `input`: string 1-500 ký tự.
-- `bookId`: chỉ số, 8-30 ký tự.
-- `jobId`: UUID hoặc format job id nội bộ.
-- `format`: enum `txt`, `epub`.
-- `kind`: enum `original`, `translated`.
-- `q`: tối đa 100 ký tự.
+- Anonymous quota thấp.
+- User token/API key quota cao hơn.
+- Một secret invite code nếu chỉ dùng nhóm nhỏ.
+- Ban list IP.
 
-Không đưa raw input vào shell command. Hiện code spawn legacy bằng path cố định, đây là hướng đúng.
+Giai đoạn đầu có thể dùng `ACCESS_TOKEN` đơn giản:
 
-## Path safety
+- Frontend gửi token khi tạo job.
+- Public vẫn xem library/tải file nếu muốn.
+- Job download/translate yêu cầu token.
 
-Thay logic prefix:
+### 5. Rate limit bền vững
 
-```ts
-target.startsWith(base)
-```
+Rate limit RAM không đủ production. Cần chuyển sang:
 
-bằng logic kiểu:
+- SQLite table rate limit nếu một instance.
+- Redis nếu nhiều instance.
 
-```ts
-const relativePath = relative(base, target);
-const isInside = relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
-```
+Luật đề xuất:
 
-Lý do: `/app/storage2/file` cũng startsWith `/app/storage`.
+- Resolve: 30/phút/IP.
+- Download job: 3/10 phút/IP hoặc user.
+- Translate job: 2/10 phút/IP hoặc user.
+- File download: 60/phút/IP.
+- SSE: giới hạn số connection/IP.
 
-## Legacy downloader
+### 6. Input validation
 
-Quy tắc production:
+Hiện đã có JSON schema. Cần bổ sung:
 
-- Chỉ bind legacy vào `127.0.0.1`.
-- Không publish port legacy ra Internet.
-- Nếu legacy có password thì set password mạnh.
-- App chỉ giao tiếp qua localhost hoặc network nội bộ Docker.
-- Binary phải có checksum và version rõ.
-- Không tự tải binary mới khi app start nếu không verify checksum.
+- Chỉ cho book ID numeric hoặc URL domain hợp lệ.
+- Không nhận URL tùy ý để tránh SSRF.
+- Preview key phải chỉ là key được legacy trả về hoặc pattern chặt.
+- Giới hạn body size ở Fastify và reverse proxy.
 
-## Secret management
+### 7. Filesystem safety
 
-Không commit:
+Đã có `assertInsideBase`. Cần duy trì:
 
-- `.env`
-- API key STV hoặc provider khác.
-- Admin password.
+- Không bao giờ gửi file path từ client vào `sendFile` trực tiếp.
+- Path nội bộ lấy từ DB và luôn normalize trong `DATA_DIR`.
+- Không follow symlink trong `storage` nếu không cần.
+- Không cho user chọn tên file output tùy ý.
 
-Production cần có:
+### 8. Secret management
 
-```env
-STV_API_KEY=...
-```
+Không commit `.env`. Hiện `.gitignore` đã có `.env`, cần kiểm tra định kỳ.
 
-Nếu dùng Docker Compose, mount `.env.production` trên server, không đưa vào repo.
+Secrets:
 
-## Security headers
+- `STV_API_KEY` nếu dùng.
+- Admin password/hash.
+- Access token.
+- Backup remote credential.
 
-Qua Nginx hoặc Fastify:
+Quy tắc:
 
-```text
-X-Content-Type-Options: nosniff
-X-Frame-Options: DENY
-Referrer-Policy: no-referrer
-Permissions-Policy: camera=(), microphone=(), geolocation=()
-Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline';
-```
+- Chỉ đặt secret ở server env.
+- Không log secret.
+- Không trả secret trong admin overview.
 
-CSP cần test với Vite build và ảnh cover proxy.
+### 9. Security headers
 
-## File download
+Thêm ở reverse proxy hoặc Fastify:
 
-Khi trả file:
+- `X-Content-Type-Options: nosniff`.
+- `X-Frame-Options: DENY`.
+- `Referrer-Policy: no-referrer`.
+- `Content-Security-Policy` phù hợp frontend.
+- `Permissions-Policy`.
 
-- Dùng path relative từ DB.
-- Resolve dưới `DATA_DIR`.
-- Check path safety.
-- Set `Content-Disposition` filename đã encode.
-- Không cho user truyền path raw.
-- Có thể để Nginx serve file bằng `X-Accel-Redirect` ở giai đoạn sau để giảm tải Node.
+### 10. Dependency và binary security
 
-## Audit log
+Legacy downloader là binary ngoài. Cần:
 
-Ghi các hành động:
+- Lưu phiên bản release đã dùng.
+- Lưu checksum SHA256.
+- Không tự động download binary mới khi deploy.
+- Chạy binary bằng user không phải root.
+- Không expose port legacy.
 
-- Tạo job.
-- Cancel/retry job.
-- Tải file.
-- Lỗi rate limit đáng chú ý.
+Node dependencies:
 
-Audit log giúp debug khi có spam job hoặc disk đầy.
+- Chạy `npm audit` định kỳ.
+- Pin lockfile.
+- Không dùng `npm install` không lock trong production.
 
-## Hardening Docker
+## Checklist hardening
 
-Docker runtime nên:
-
-- Chạy non-root user.
-- Pin image version hoặc digest.
-- Không mount Docker socket.
-- Volume chỉ đúng thư mục cần thiết.
-- Read-only root filesystem nếu có thể.
-- `restart: unless-stopped`.
-- Có `HEALTHCHECK`.
-## Điều chỉnh theo hướng không có tài khoản
-
-Phạm vi hiện tại không cần đăng ký hay đăng nhập. Thay vào đó, lớp bảo vệ chính là:
-
-- Rate limit theo IP.
-- Validation schema cho toàn bộ API.
-- Giới hạn số job queued/running theo IP và toàn hệ thống.
-- Backpressure rõ ràng khi queue đầy.
-- Audit log cho thao tác tạo job, cancel, retry, tải file.
-
-Các đoạn nói về auth/session/cookie/CSRF và invitation code không còn là ưu tiên của phase đầu.
+- Backend bind `127.0.0.1` sau reverse proxy.
+- TLS hoạt động.
+- Admin có basic auth hoặc VPN.
+- `/metrics` không public.
+- Legacy port không public.
+- Trust proxy/IP spoofing được xử lý.
+- Job create cần quota bền vững.
+- Body size limit được cấu hình.
+- Disk low guard được bật.
+- Secret không xuất hiện trong log/admin.
+- Service chạy bằng non-root user.
