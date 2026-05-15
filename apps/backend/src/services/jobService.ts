@@ -1225,7 +1225,9 @@ export class JobService
 
         const [chapters, book] = await Promise.all([
             loadArtifactChaptersAsync(params.sourcePath, params.chaptersJson ?? chaptersJsonPath),
-            loadArtifactBookAsync(params.sourcePath, params.metaJson, params.book)
+            params.translated
+                ? loadArtifactBookAsync(params.sourcePath, params.metaJson, params.book)
+                : loadOriginalArtifactBookAsync(params.sourcePath, params.metaJson, params.book)
         ]);
         const resolvedBook = book ?? params.book;
 
@@ -1482,6 +1484,75 @@ function deriveMetaJsonPath(path: string): string
     return resolve(dirname(path), `${baseNameWithoutFormat(path)}.meta.json`);
 }
 
+function readHeaderValue(lines: readonly string[], labels: readonly string[]): string | undefined
+{
+    const pattern = new RegExp(`^(?:${labels.map(escapeRegExp).join("|")})\\s*[：:]\\s*(.*)$`, "i");
+
+    for (const line of lines)
+    {
+        const match = line.trim().match(pattern);
+
+        if (match && match[1])
+        {
+            return match[1].trim() || undefined;
+        }
+    }
+
+    return undefined;
+}
+
+function readHeaderBlock(lines: readonly string[], labels: readonly string[]): string | undefined
+{
+    const labelPattern = new RegExp(`^(?:${labels.map(escapeRegExp).join("|")})\\s*[：:]\\s*(.*)$`, "i");
+    const separatorPattern = /^(?:={40}|-{40})$/;
+
+    for (let index = 0; index < lines.length; index += 1)
+    {
+        const line = lines[index]?.trim() ?? "";
+        const match = line.match(labelPattern);
+
+        if (!match)
+        {
+            continue;
+        }
+
+        if (match[1]?.trim())
+        {
+            return match[1].trim();
+        }
+
+        const blocks: string[] = [];
+
+        for (let next = index + 1; next < lines.length; next += 1)
+        {
+            const nextLine = lines[next] ?? "";
+
+            if (separatorPattern.test(nextLine.trim()))
+            {
+                break;
+            }
+
+            if (nextLine.trim() === "")
+            {
+                blocks.push("");
+                continue;
+            }
+
+            blocks.push(nextLine.trimEnd());
+        }
+
+        const result = blocks.join("\n").trim();
+        return result || undefined;
+    }
+
+    return undefined;
+}
+
+function escapeRegExp(input: string): string
+{
+    return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function extractBookId(input: string): string | undefined
 {
     const trimmed = input.trim();
@@ -1538,6 +1609,57 @@ async function loadArtifactBookAsync(
     }
 
     return fallbackBook ?? readBookInfoFromFileName(sourcePath);
+}
+
+async function loadOriginalArtifactBookAsync(
+    sourcePath: string,
+    metaJsonPath?: string,
+    fallbackBook?: BookInfo
+): Promise<BookInfo | undefined>
+{
+    if (sourcePath.toLowerCase().endsWith(".txt"))
+    {
+        const parsed = await readBookInfoFromTextAsync(sourcePath, fallbackBook);
+
+        if (parsed)
+        {
+            return parsed;
+        }
+    }
+
+    return loadArtifactBookAsync(sourcePath, metaJsonPath, fallbackBook);
+}
+
+async function readBookInfoFromTextAsync(
+    path: string,
+    fallbackBook?: BookInfo
+): Promise<BookInfo | undefined>
+{
+    const raw = await readTextFile(path).catch(() => "");
+
+    if (!raw)
+    {
+        return fallbackBook;
+    }
+
+    const lines = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    const bookId = fallbackBook?.bookId ?? extractBookId(path) ?? "0";
+    const title = readHeaderValue(lines, ["书名", "Tên truyện", "Tên sách"])
+        ?? fallbackBook?.title
+        ?? cleanTitle(readBookInfoFromFileName(path)?.title ?? "Truyện chưa đặt tên");
+    const author = readHeaderValue(lines, ["作者", "Tác giả"]) ?? fallbackBook?.author;
+    const tagsValue = readHeaderValue(lines, ["标签", "Thể loại"]);
+    const description = readHeaderBlock(lines, ["简介", "Giới thiệu"]) ?? fallbackBook?.description;
+
+    return {
+        author,
+        bookId,
+        chapterCount: fallbackBook?.chapterCount ?? 0,
+        coverUrl: fallbackBook?.coverUrl,
+        description,
+        tags: tagsValue ? tagsValue.split(",").map((tag) => tag.trim()).filter(Boolean) : fallbackBook?.tags ?? [],
+        title
+    };
 }
 
 async function readChaptersFromEpubAsync(path: string): Promise<StoredChapter[]>

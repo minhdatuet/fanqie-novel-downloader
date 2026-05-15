@@ -189,6 +189,6 @@ function escapeHtml(input: string): string
 function normalizeTitle(input: string): string
 {
     return input
-        .replace(/[\s\u3000：:，,。？?!！、]/g, "")
+        .replace(/[\s\u3000\uFF1A:\uFF0C,\u3002\uFF1F?!\uFF01\u3001]/g, "")
         .toLowerCase();
 }
