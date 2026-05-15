@@ -1,8 +1,11 @@
 node_modules/
 dist/
-storage/
+/storage/
 .env
 .env.local
 npm-debug.log*
 *.tsbuildinfo
-apps/backend/*/
+apps/backend/dist/
+apps/backend/node_modules/
+apps/backend/storage/
+apps/backend/[0-9]*/
