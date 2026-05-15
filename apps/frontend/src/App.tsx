@@ -4,7 +4,6 @@ import { Search } from "lucide-react";
 import {
     cancelJob,
     getLibrary,
-    getLibraryByBookId,
     jobFileUrl,
     libraryFileUrl,
     resolveBook,
@@ -122,26 +121,22 @@ export function App(): React.JSX.Element
     {
         void runAction("resolve", async () =>
         {
-            const existingId = parseBookId(input);
+            const nextPlan = await resolveBook(input);
+            const resolvedBookId = nextPlan.book.bookId;
+            const currentDownloadBookId = downloadJob?.book?.bookId;
+            const currentTranslateBookId = translateJob?.book?.bookId;
 
-            if (existingId)
+            setPlan(nextPlan);
+            if (currentDownloadBookId !== resolvedBookId)
             {
-                const found = await getLibraryByBookId(existingId);
-
-                if (found.items.length > 0)
-                {
-                    await focusLibraryBook(existingId);
-                    setPlan(undefined);
-                    setDownloadJob(undefined);
-                    setTranslateJob(undefined);
-                    return;
-                }
+                setDownloadJob(undefined);
             }
 
-            const nextPlan = await resolveBook(input);
-            setPlan(nextPlan);
-            setDownloadJob(undefined);
-            setTranslateJob(undefined);
+            if (currentTranslateBookId !== resolvedBookId)
+            {
+                setTranslateJob(undefined);
+            }
+
             setFocusedBookId("");
             setViewMode("download");
         });

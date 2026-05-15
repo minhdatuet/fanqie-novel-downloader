@@ -117,7 +117,7 @@ export function JobStatus(
 
                 {(isFailed || isCanceled) && onRetry && (
                     <Button variant="secondary" onClick={onRetry} className="w-full">
-                        Thử lại
+                        {type === "download" ? "Tải tiếp" : "Thử lại"}
                     </Button>
                 )}
 
