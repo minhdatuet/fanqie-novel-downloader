@@ -4,10 +4,16 @@ services:
         environment:
             DATA_DIR: /app/storage
             HOST: 0.0.0.0
+            LEGACY_BRIDGE: "true"
+            LEGACY_DATA_DIR: /app/storage/legacy
+            LEGACY_EXE_PATH: /app/tools/legacy/TomatoNovelDownloader
+            LEGACY_HOST: 127.0.0.1
+            LEGACY_PORT: 18424
             PORT: 8787
-            WEB_ORIGIN: "*"
+            WEB_ORIGIN: http://localhost:5173
         ports:
-            - "8787:8787"
+            - "127.0.0.1:8787:8787"
         volumes:
             - ./storage:/app/storage
+            - ./tools/legacy/TomatoNovelDownloader:/app/tools/legacy/TomatoNovelDownloader:ro
         restart: unless-stopped

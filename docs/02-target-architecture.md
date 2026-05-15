@@ -10,7 +10,7 @@ trạng thái.
 - Mọi trạng thái quan trọng phải nằm trong database.
 - File truyện nằm trên filesystem, database chỉ lưu metadata, trạng thái, checksum và đường dẫn tương đối.
 - Downloader legacy là dependency bên ngoài, phải chạy như sidecar nội bộ, không expose public.
-- Production phải có auth, rate limit, quota, backup và metrics ngay từ đầu.
+- Production phải có rate limit, quota, backup và metrics ngay từ đầu.
 
 ## Sơ đồ mục tiêu
 
@@ -20,7 +20,6 @@ flowchart LR
     Nginx --> Frontend["Static frontend"]
     Nginx --> Api["Fastify API"]
 
-    Api --> Auth["Auth middleware"]
     Api --> Db["SQLite WAL hoặc PostgreSQL"]
     Api --> Queue["Persistent job queue"]
     Api --> Storage["Filesystem storage"]
@@ -65,14 +64,12 @@ apps/backend/src/
 │   ├── env.ts
 │   └── logger.ts
 ├── modules/
-│   ├── auth/
 │   ├── books/
 │   ├── downloads/
 │   ├── jobs/
 │   ├── library/
 │   ├── storage/
 │   ├── translation/
-│   └── users/
 ├── infra/
 │   ├── db/
 │   ├── legacy/
@@ -90,9 +87,6 @@ Không cần refactor toàn bộ ngay. Khi thêm database và queue, tách theo 
 
 API public:
 
-- `POST /api/auth/login`
-- `POST /api/auth/logout`
-- `GET /api/me`
 - `POST /api/books/resolve`
 - `GET /api/books`
 - `GET /api/books/:bookId`
@@ -147,7 +141,7 @@ Field cần có:
 
 ## Luồng tải sách mục tiêu
 
-1. API validate input và auth.
+1. API validate input.
 2. Parse `bookId`.
 3. Kiểm tra `books` và `book_files`.
 4. Nếu sách đã có original hợp lệ, trả về record hiện có.
@@ -198,4 +192,39 @@ Filesystem:
 
 - Lưu content thật.
 - Không dùng filename làm nguồn metadata duy nhất.
+## Điều chỉnh phạm vi kiểm soát truy cập
 
+Tài liệu này trước đó nghiêng về auth/session. Theo hướng mới, phase đầu không cần đăng ký
+hay đăng nhập tài khoản. Mục tiêu trước mắt là chống spam và giới hạn tải:
+
+- Rate limit theo IP và theo endpoint nhạy cảm.
+- Validation cho mọi input vào API.
+- Backpressure khi queue đầy.
+- Nếu cần chặn public tạm thời thì ưu tiên reverse proxy hoặc allowlist hạ tầng,
+  không phải cơ chế tài khoản người dùng.
+
+## API production tối thiểu đã điều chỉnh
+
+Các endpoint public vẫn giữ nguyên phần tải sách, dịch, thư viện và file.
+Các endpoint `auth` không còn nằm trong phạm vi phase đầu.
+
+API cần ưu tiên:
+
+- `POST /api/books/resolve`
+- `GET /api/books`
+- `GET /api/books/:bookId`
+- `POST /api/jobs/download`
+- `POST /api/books/:bookId/translate`
+- `GET /api/jobs`
+- `GET /api/jobs/:id`
+- `GET /api/jobs/:id/events`
+- `POST /api/jobs/:id/cancel`
+- `POST /api/jobs/:id/retry`
+- `GET /api/books/:bookId/files/:kind/:format`
+
+Yêu cầu bảo vệ:
+
+- Validate input đầy đủ.
+- Rate limit các endpoint tạo job và resolve.
+- Giới hạn số job active theo IP và toàn hệ thống.
+- Không để request bình thường tạo tải nặng vô hạn.

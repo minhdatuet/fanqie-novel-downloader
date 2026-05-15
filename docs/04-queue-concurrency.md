@@ -20,7 +20,6 @@ Cơ chế này đủ cho local/dev, nhưng chưa đủ production vì restart s�
 
 ### Request nhẹ
 
-- Login.
 - Resolve metadata đã cache.
 - Xem thư viện.
 - Xem job.
@@ -186,4 +185,12 @@ Tiêu chí pass:
 - Queue không mất job sau restart.
 - File output không hỏng.
 - CPU không giữ 100% liên tục quá 5 phút ở baseline.
+## Điều chỉnh theo hướng không có tài khoản
 
+Các giới hạn trong giai đoạn đầu nên hiểu là theo IP, theo endpoint và theo toàn hệ thống,
+không phải quota theo user.
+
+- Mỗi IP chỉ được tạo một số job nhất định trong khoảng thời gian ngắn.
+- Toàn hệ thống giới hạn số job queued/running để chống spam.
+- Job download/translate phải có backpressure khi queue đầy.
+- Không cần cơ chế admin bypass quota theo tài khoản ở phase đầu.

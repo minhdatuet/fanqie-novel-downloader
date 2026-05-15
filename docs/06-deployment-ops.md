@@ -155,13 +155,6 @@ TRANSLATION_SINGLE_PARAGRAPH_PAUSE_MS=120
 STV_API_URL=https://comic.sangtacvietcdn.xyz/tsm.php
 ```
 
-Thêm sau khi có auth:
-
-```env
-SESSION_SECRET=replace-with-random-secret
-ADMIN_USERNAME=admin
-```
-
 Không đặt `WEB_ORIGIN=*` trong production.
 
 ## Healthcheck
@@ -269,4 +262,13 @@ Rollback:
 2. Start image cũ.
 3. Nếu migration DB đã chạy, chỉ rollback app khi migration backward-compatible.
 4. Nếu migration destructive, restore backup.
+## Điều chỉnh triển khai theo hướng không auth
 
+Không còn yêu cầu `SESSION_SECRET` hay flow đăng nhập trong phase đầu.
+Khi deploy, ưu tiên:
+
+- Rate limit ở Nginx hoặc Fastify.
+- Chỉ bind app nội bộ và đặt sau reverse proxy.
+- Giới hạn public traffic vào các endpoint tạo job/resolve.
+- Nếu cần khóa tạm, dùng allowlist hạ tầng hoặc basic auth tại reverse proxy,
+  không triển khai tài khoản người dùng trong app ở giai đoạn này.

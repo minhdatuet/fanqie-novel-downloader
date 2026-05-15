@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, Languages, Loader2, AlertCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, Languages, Loader2 } from "lucide-react";
 
 import type { DownloadFormat, JobRecord } from "../types";
 import { Button } from "./ui/Button";
@@ -17,23 +17,29 @@ interface JobStatusProps
     downloadLabel?: string;
     job: JobRecord;
     onAction?: () => void;
+    onCancel?: () => void;
+    onRetry?: () => void;
     title: string;
     type: "download" | "translate";
 }
 
-export function JobStatus({
+export function JobStatus(
+{
     downloadOptions,
     downloadLabel = "Tải truyện",
     job,
     onAction,
+    onCancel,
+    onRetry,
     title,
     type
-}: JobStatusProps)
+}: JobStatusProps): React.JSX.Element
 {
     const isPlaceholderJob = job.id === "pending";
     const isRunning = !isPlaceholderJob && (job.status === "running" || job.status === "queued");
     const isCompleted = job.status === "completed";
     const isFailed = job.status === "failed";
+    const isCanceled = job.status === "canceled";
     const description = isPlaceholderJob
         ? job.progress.message || "Sẵn sàng tải"
         : job.status === "queued"
@@ -56,7 +62,7 @@ export function JobStatus({
                     </div>
                     {isRunning && <Loader2 className="h-5 w-5 animate-spin text-primary" />}
                     {isCompleted && <CheckCircle2 className="h-5 w-5 text-emerald-500" />}
-                    {isFailed && <AlertCircle className="h-5 w-5 text-destructive" />}
+                    {(isFailed || isCanceled) && <AlertCircle className="h-5 w-5 text-destructive" />}
                 </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -96,6 +102,12 @@ export function JobStatus({
                     </Button>
                 )}
 
+                {(job.status === "queued" || job.status === "running") && onCancel && (
+                    <Button variant="outline" onClick={onCancel} className="w-full">
+                        Hủy job
+                    </Button>
+                )}
+
                 {isCompleted && type === "download" && onAction && (
                     <Button variant="secondary" onClick={onAction} className="w-full gap-2">
                         <Languages className="h-4 w-4" />
@@ -103,7 +115,13 @@ export function JobStatus({
                     </Button>
                 )}
 
-                {isFailed && job.error && (
+                {(isFailed || isCanceled) && onRetry && (
+                    <Button variant="secondary" onClick={onRetry} className="w-full">
+                        Thử lại
+                    </Button>
+                )}
+
+                {(isFailed || isCanceled) && job.error && (
                     <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
                         <strong>Lỗi:</strong> {job.error}
                     </div>

@@ -49,46 +49,44 @@ curl http://127.0.0.1:8787/healthz
 curl http://127.0.0.1:8787/readyz
 ```
 
-## Phase 1: Security gate trước public
+## Phase 1: Chống spam trước public
 
-Mục tiêu: chỉ user hợp lệ mới tạo job/tải file.
+Mục tiêu: user bất kỳ vẫn có thể dùng app, nhưng không spam được job hay làm nghẽn hệ thống.
 
 Việc cần làm:
 
-1. Thêm config `SESSION_SECRET`.
-2. Thêm bảng hoặc file user tạm nếu DB chưa có. Nếu chuẩn bị DB ở Phase 2, có thể làm Phase 1 và 2 cùng PR nhỏ.
-3. Thêm login/logout/me.
-4. Dùng cookie HttpOnly, Secure, SameSite=Lax.
-5. Bảo vệ mọi route `/api` trừ `/api/healthz`, `/api/readyz`, `/api/auth/login`.
-6. Thêm rate limit cho login, resolve, create job.
-7. Thêm validation schema cho body/query/params.
-8. Sửa path safety bằng `relative()`.
+1. Thêm validation schema cho body/query/params.
+2. Thêm rate limit cho resolve, create job, translate, SSE.
+3. Thêm quota và backpressure theo IP/toàn hệ thống.
+4. Thêm audit log cho action nhạy cảm.
+5. Sửa path safety bằng `relative()`.
 
 Files dự kiến:
 
-- `apps/backend/src/modules/auth/*`
 - `apps/backend/src/shared/pathSafety.ts`
 - `apps/backend/src/shared/schemas.ts`
 - `apps/backend/src/routes/apiRoutes.ts`
+- `apps/backend/src/services/spamGuard.ts`
+- `apps/backend/src/services/auditLogService.ts`
 - `apps/frontend/src/api.ts`
 - `apps/frontend/src/App.tsx`
 
 Acceptance:
 
-- User chưa login không tạo job được.
-- Login sai bị rate limit.
+- Người dùng bình thường vẫn dùng app, nhưng tạo job bị rate limit nếu spam.
+- Quota chặn job vượt ngưỡng.
 - `WEB_ORIGIN=*` không còn là cấu hình production mẫu.
 - Test path traversal fail đúng.
 
 ## Phase 2: Database và migration storage
 
-Mục tiêu: database là nguồn sự thật cho books, files, jobs, users.
+Mục tiêu: database là nguồn sự thật cho books, files, jobs.
 
 Việc cần làm:
 
 1. Chọn SQLite WAL cho giai đoạn đầu.
 2. Thêm migration framework.
-3. Tạo bảng `users`, `sessions`, `books`, `book_files`, `jobs`, `job_events`, `audit_logs`.
+3. Tạo bảng `books`, `book_files`, `jobs`, `job_events`, `audit_logs`, `download_locks`.
 4. Thêm repository layer.
 5. Tạo script migrate storage hiện tại vào DB.
 6. Đổi `/api/library` đọc DB thay vì scan toàn bộ filesystem mỗi request.
@@ -100,7 +98,6 @@ Files dự kiến:
 - `apps/backend/src/infra/db/*`
 - `apps/backend/src/modules/books/*`
 - `apps/backend/src/modules/jobs/*`
-- `apps/backend/src/modules/users/*`
 - `scripts/migrate-storage-to-db.mjs`
 - `.env.example`
 
@@ -258,8 +255,14 @@ Load test pass:
 - 30 virtual users request nhẹ.
 - 5 user tạo job.
 - Active job không vượt config.
-- Không OOM.
-- Không mất job sau restart.
+
+## Trạng thái sau triển khai
+
+- Phase 0 đến Phase 5 đã hoàn tất theo phạm vi hiện tại của project.
+- Phase 6 đã hoàn tất với request id, `/metrics`, disk usage check và backup script.
+- Phase 7 đã có bộ test backend, load smoke, benchmark `autocannon` và fake legacy server mẫu.
+- Smoke test thực tế ngày 2026-05-15 xác nhận backend vẫn tải truyện và file trả 200.
+- Phần Playwright E2E và fake legacy integration nâng cao vẫn còn là bước tiếp theo nếu muốn khóa CI chặt hơn.
 
 ## Phase 8: Tối ưu sau production
 
@@ -274,14 +277,13 @@ Chỉ làm sau khi Phase 0-7 ổn.
 - Search full-text theo title/author/tags.
 - Resume dịch theo chapter checkpoint.
 - Provider dịch nhiều nguồn và circuit breaker.
-- UI quản lý user/invite.
+- UI quản lý quota và vận hành.
 
 ## Checklist release production đầu tiên
 
 - Build pass.
 - Test pass.
 - Audit pass.
-- Auth bật.
 - CORS đúng domain.
 - Rate limit bật.
 - DB migration chạy.

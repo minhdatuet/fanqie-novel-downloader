@@ -1,4 +1,4 @@
-import type { DownloadFormat, DownloadPlan, JobRecord, LibraryItem } from "./types";
+import type { AdminOverview, DownloadFormat, DownloadPlan, JobRecord, LibraryItem } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -52,6 +52,20 @@ export function getJob(jobId: string): Promise<JobRecord>
     return requestJson<JobRecord>(`/api/jobs/${jobId}`);
 }
 
+export function cancelJob(jobId: string): Promise<JobRecord>
+{
+    return requestJson<JobRecord>(`/api/jobs/${jobId}/cancel`, {
+        method: "POST"
+    });
+}
+
+export function retryJob(jobId: string): Promise<JobRecord>
+{
+    return requestJson<JobRecord>(`/api/jobs/${jobId}/retry`, {
+        method: "POST"
+    });
+}
+
 export function getLibrary(query = ""): Promise<{ items: LibraryItem[] }>
 {
     const params = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
@@ -70,6 +84,11 @@ export function startLibraryTranslate(bookId: string): Promise<JobRecord>
     });
 }
 
+export function getAdminOverview(): Promise<AdminOverview>
+{
+    return requestJson<AdminOverview>("/api/admin/overview");
+}
+
 export function jobFileUrl(jobId: string, kind: "original" | "translated", format: DownloadFormat): string
 {
     return `${API_BASE_URL}/api/jobs/${jobId}/file?kind=${kind}&format=${format}`;
@@ -82,35 +101,58 @@ export function libraryFileUrl(bookId: string, kind: "original" | "translated", 
 
 export function subscribeJob(jobId: string, onUpdate: (job: JobRecord) => void): () => void
 {
-    if (!("EventSource" in window))
+    let stopped = false;
+    let pollTimer: number | undefined;
+    let source: EventSource | undefined;
+
+    const stop = (): void =>
     {
-        let stopped = false;
+        stopped = true;
 
-        const poll = async (): Promise<void> =>
+        if (pollTimer !== undefined)
         {
-            if (stopped)
-            {
-                return;
-            }
+            window.clearTimeout(pollTimer);
+        }
 
+        source?.close();
+    };
+
+    const poll = async (): Promise<void> =>
+    {
+        if (stopped)
+        {
+            return;
+        }
+
+        try
+        {
             const job = await getJob(jobId);
             onUpdate(job);
 
-            if (job.status !== "completed" && job.status !== "failed")
+            if (job.status !== "completed" && job.status !== "failed" && job.status !== "canceled")
             {
-                window.setTimeout(poll, 1000);
+                pollTimer = window.setTimeout(() =>
+                {
+                    void poll();
+                }, 1500);
             }
-        };
-
-        void poll();
-
-        return () =>
+        }
+        catch
         {
-            stopped = true;
-        };
+            pollTimer = window.setTimeout(() =>
+            {
+                void poll();
+            }, 2000);
+        }
+    };
+
+    if (!("EventSource" in window))
+    {
+        void poll();
+        return stop;
     }
 
-    const source = new EventSource(`${API_BASE_URL}/api/jobs/${jobId}/events`);
+    source = new EventSource(`${API_BASE_URL}/api/jobs/${jobId}/events`);
 
     source.onmessage = (event) =>
     {
@@ -119,8 +161,15 @@ export function subscribeJob(jobId: string, onUpdate: (job: JobRecord) => void):
 
     source.onerror = () =>
     {
-        source.close();
+        if (stopped)
+        {
+            return;
+        }
+
+        source?.close();
+        source = undefined;
+        void poll();
     };
 
-    return () => source.close();
+    return stop;
 }

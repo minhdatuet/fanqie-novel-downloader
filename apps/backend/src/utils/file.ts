@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 
 import type { FastifyReply } from "fastify";
 
@@ -37,17 +38,20 @@ export async function writeTextFile(path: string, value: string): Promise<void>
     await writeFile(path, value, "utf8");
 }
 
-export function assertInsideBase(baseDir: string, targetPath: string): string
+export async function writeTextFileAtomic(path: string, value: string): Promise<void>
 {
-    const base = resolve(baseDir);
-    const target = resolve(targetPath);
+    await writeFileAtomic(path, value, "utf8");
+}
 
-    if (!target.startsWith(base))
-    {
-        throw new Error("Đường dẫn tải file không hợp lệ");
-    }
+export async function writeBinaryFileAtomic(path: string, value: Buffer): Promise<void>
+{
+    await writeFileAtomic(path, value);
+}
 
-    return target;
+export async function hashFileSha256Async(path: string): Promise<string>
+{
+    const buffer = await readFile(path);
+    return createHash("sha256").update(buffer).digest("hex");
 }
 
 export function sendTextDownload(reply: FastifyReply, path: string): FastifyReply
@@ -57,7 +61,12 @@ export function sendTextDownload(reply: FastifyReply, path: string): FastifyRepl
 
 export function sendFileDownload(reply: FastifyReply, path: string): FastifyReply
 {
-    const name = basename(path);
+    return sendFileDownloadAs(reply, path);
+}
+
+export function sendFileDownloadAs(reply: FastifyReply, path: string, downloadName?: string): FastifyReply
+{
+    const name = downloadName?.trim() || basename(path);
     const encoded = encodeURIComponent(name);
     const extension = name.toLowerCase().endsWith(".epub") ? "application/epub+zip" : "text/plain; charset=utf-8";
 
@@ -65,4 +74,21 @@ export function sendFileDownload(reply: FastifyReply, path: string): FastifyRepl
     reply.header("content-disposition", `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`);
 
     return reply.send(createReadStream(path));
+}
+
+async function writeFileAtomic(path: string, value: string | Buffer, encoding?: BufferEncoding): Promise<void>
+{
+    await mkdir(dirname(path), { recursive: true });
+    const tempPath = `${path}.tmp-${randomUUID()}`;
+
+    if (typeof value === "string")
+    {
+        await writeFile(tempPath, value, encoding);
+    }
+    else
+    {
+        await writeFile(tempPath, value);
+    }
+
+    await rename(tempPath, path);
 }

@@ -2,7 +2,7 @@ export type DownloadFormat = "txt" | "epub";
 
 export type JobKind = "download" | "translate";
 
-export type JobStatus = "queued" | "running" | "completed" | "failed";
+export type JobStatus = "queued" | "running" | "completed" | "failed" | "canceled";
 
 export interface BookInfo
 {
@@ -55,6 +55,7 @@ export interface JobRecord
     files: JobFileSet;
     id: string;
     kind: JobKind;
+    input?: string;
     outputFormat?: DownloadFormat;
     progress: ProgressState;
     sourceJobId?: string;

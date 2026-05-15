@@ -33,29 +33,6 @@ Với VPS 4 GB RAM, PostgreSQL vẫn chạy được nhưng phải cấu hình t
 
 ## Schema đề xuất
 
-### users
-
-| Cột | Kiểu | Ghi chú |
-| --- | --- | --- |
-| id | text | UUID |
-| username | text | unique |
-| password_hash | text | Argon2id hoặc bcrypt |
-| role | text | `admin`, `user` |
-| status | text | `active`, `disabled` |
-| created_at | datetime | |
-| updated_at | datetime | |
-
-### sessions
-
-| Cột | Kiểu | Ghi chú |
-| --- | --- | --- |
-| id | text | UUID |
-| user_id | text | FK users |
-| token_hash | text | Không lưu token raw |
-| expires_at | datetime | |
-| created_at | datetime | |
-| revoked_at | datetime | nullable |
-
 ### books
 
 | Cột | Kiểu | Ghi chú |
@@ -102,7 +79,7 @@ book_files(book_id, kind, format)
 | Cột | Kiểu | Ghi chú |
 | --- | --- | --- |
 | id | text | UUID |
-| user_id | text | FK users |
+| user_id | text | nullable, reserved for future auth |
 | book_id | text | nullable trước khi resolve xong |
 | type | text | `download`, `translate`, `artifact` |
 | status | text | `queued`, `running`, `completed`, `failed`, `canceling`, `canceled` |
@@ -157,7 +134,7 @@ Mục đích: chống nhiều job cùng tải/dịch một sách.
 | Cột | Kiểu | Ghi chú |
 | --- | --- | --- |
 | id | text | UUID |
-| user_id | text | nullable |
+| user_id | text | nullable, reserved for future auth |
 | action | text | `login`, `create_job`, `download_file`, `cancel_job` |
 | ip | text | |
 | user_agent | text | |
@@ -211,8 +188,8 @@ storage/
 │   └── {bookId}/
 │       ├── original.txt
 │       ├── original.epub
-│       ├── translated.vi.txt
-│       ├── translated.vi.epub
+│       ├── translated.txt
+│       ├── translated.epub
 │       └── manifest.json
 ├── temp/
 │   └── jobs/
@@ -271,5 +248,22 @@ Restore drill:
 
 - Mỗi tháng thử restore vào thư mục tạm.
 - Chạy app với `DATA_DIR` restore.
-- Kiểm tra login, thư viện, tải file, job mới.
+- Kiểm tra thư viện, tải file, job mới.
+## Điều chỉnh phạm vi Phase 2
 
+Phase 2 không cần các bảng tài khoản/người dùng trong giai đoạn đầu.
+Database nên tập trung vào dữ liệu vận hành và chống spam:
+
+- `books`
+- `book_files`
+- `jobs`
+- `job_events`
+- `audit_logs`
+- `download_locks` hoặc bảng/khóa tương đương để chặn spam theo bookId
+- nếu cần, thêm bảng lưu giới hạn theo IP hoặc bộ đếm ngắn hạn
+
+Không cần ưu tiên:
+
+- `users`
+- `sessions`
+- không có luồng phân quyền theo tài khoản

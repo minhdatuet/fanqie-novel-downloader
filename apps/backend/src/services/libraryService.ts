@@ -3,6 +3,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, relative, resolve } from "node:path";
 
 import type { AppConfig } from "../config.js";
+import type { DatabaseService } from "../infra/db/database.js";
 import type { BookInfo } from "../types.js";
 import { writeJsonFile } from "../utils/file.js";
 
@@ -25,6 +26,8 @@ export interface LibraryItem
 export interface LibraryQuery
 {
     bookId?: string;
+    page?: number;
+    pageSize?: number;
     q?: string;
 }
 
@@ -58,21 +61,32 @@ export class LibraryService
         items: LibraryItem[];
     };
     private readonly config: AppConfig;
+    private readonly database?: DatabaseService;
     private readonly translatedBookResolver?: TranslatedBookResolver;
 
-    public constructor(config: AppConfig, translatedBookResolver?: TranslatedBookResolver)
+    public constructor(
+        config: AppConfig,
+        database?: DatabaseService,
+        translatedBookResolver?: TranslatedBookResolver
+    )
     {
         this.config = config;
+        this.database = database;
         this.translatedBookResolver = translatedBookResolver;
     }
 
     public async list(query: LibraryQuery = {}): Promise<LibraryItem[]>
     {
+        if (this.database)
+        {
+            const items = this.database.listLibraryItems(query);
+            return await this.decorateTranslatedItems(items);
+        }
+
         const items = await this.loadItems();
         const bookId = query.bookId?.trim();
         const keyword = normalize(query.q ?? "");
-
-        return items.filter((item) =>
+        const filtered = items.filter((item) =>
         {
             if (bookId && item.bookId !== bookId)
             {
@@ -86,10 +100,24 @@ export class LibraryService
 
             return normalize(`${item.bookId} ${item.title} ${item.author ?? ""}`).includes(keyword);
         });
+
+        return paginateLibraryItems(filtered, query.page, query.pageSize);
     }
 
     public async findByBookId(bookId: string): Promise<LibraryItem | undefined>
     {
+        if (this.database)
+        {
+            const item = this.database.findLibraryItem(bookId);
+
+            if (!item)
+            {
+                return undefined;
+            }
+
+            return (await this.decorateTranslatedItems([item]))[0];
+        }
+
         return (await this.list({ bookId }))[0];
     }
 
@@ -121,12 +149,12 @@ export class LibraryService
     {
         const markerPath = resolve(this.config.dataDir, "cache", "book-meta-migration.json");
 
-        if (existsSync(markerPath))
+        if (existsSync(markerPath) && (!this.database || this.database.hasAnyBooks()))
         {
             return 0;
         }
 
-        const items = await this.list();
+        const items = this.database ? await this.scan() : await this.list();
         let migratedCount = 0;
 
         for (const item of items)
@@ -136,6 +164,11 @@ export class LibraryService
                 book: this.toBookInfo(item)
             }).catch(() => undefined);
             migratedCount += 1;
+        }
+
+        if (this.database)
+        {
+            this.database.seedLibrarySnapshot(items);
         }
 
         await writeJsonFile(markerPath, {
@@ -149,6 +182,11 @@ export class LibraryService
 
     private async loadItems(): Promise<LibraryItem[]>
     {
+        if (this.database)
+        {
+            return this.database.listLibraryItems();
+        }
+
         const now = Date.now();
 
         if (this.cache && this.cache.expiresAt > now)
@@ -167,71 +205,41 @@ export class LibraryService
 
     private async scan(): Promise<LibraryItem[]>
     {
-        const root = resolve(this.config.dataDir, "books");
+        const [filesystemItems, jobItems] = await Promise.all([
+            scanBookFilesAsync(this.config.dataDir),
+            scanJobFilesAsync(this.config.dataDir)
+        ]);
 
-        if (!existsSync(root))
+        return mergeLibraryItems([...filesystemItems, ...jobItems]).sort((left, right) =>
+            right.updatedAt.localeCompare(left.updatedAt)
+        );
+    }
+
+    private async decorateTranslatedItems(items: LibraryItem[]): Promise<LibraryItem[]>
+    {
+        const resolved: LibraryItem[] = [];
+
+        for (const item of items)
         {
-            return [];
-        }
+            const translatedMeta = await this.resolveTranslatedMetaAsync(item.bookId);
 
-        const files = await findBookFiles(root);
-        const groups = new Map<string, BookCandidate[]>();
-
-        for (const file of files)
-        {
-            const bookId = extractBookId(file.path) ?? await extractBookIdFromMeta(file.path);
-
-            if (!bookId)
+            if (translatedMeta)
             {
+                resolved.push({
+                    ...item,
+                    author: translatedMeta.author?.trim() || item.author,
+                    coverUrl: translatedMeta.coverUrl?.trim() || item.coverUrl,
+                    description: translatedMeta.description?.trim() || item.description,
+                    tags: translatedMeta.tags && translatedMeta.tags.length > 0 ? translatedMeta.tags : item.tags,
+                    title: translatedMeta.title?.trim() || item.title
+                });
                 continue;
             }
 
-            const current = groups.get(bookId) ?? [];
-            current.push(file);
-            groups.set(bookId, current);
+            resolved.push(item);
         }
 
-        const items: LibraryItem[] = [];
-
-        for (const [bookId, candidates] of groups)
-        {
-            const originals = candidates.filter((item) => !isTranslatedPath(item.path));
-            const translated = candidates.filter((item) => isTranslatedPath(item.path));
-            const originalTxt = latest(originals.filter((item) => item.path.toLowerCase().endsWith(".txt")));
-            const originalEpub = latest(originals.filter((item) => item.path.toLowerCase().endsWith(".epub")));
-            const translatedTxt = latest(translated.filter((item) => item.path.toLowerCase().endsWith(".txt")));
-            const translatedEpub = latest(translated.filter((item) => item.path.toLowerCase().endsWith(".epub")));
-            const original = originalTxt ?? originalEpub;
-            const translatedFile = translatedTxt ?? translatedEpub;
-            const basis = translatedTxt ?? originalTxt ?? translatedEpub ?? originalEpub;
-
-            if (!basis)
-            {
-                continue;
-            }
-
-            const meta = await readBookMeta(basis.path, bookId, this.config.dataDir);
-            const translatedMeta = await this.resolveTranslatedMetaAsync(bookId);
-            const mergedMeta = mergeReadBookMeta(meta, translatedMeta);
-            const updatedMs = Math.max(...candidates.map((item) => item.modifiedMs));
-
-            items.push({
-                author: mergedMeta.author,
-                bookId,
-                coverUrl: mergedMeta.coverUrl,
-                description: mergedMeta.description,
-                hasOriginal: Boolean(original),
-                hasTranslated: Boolean(translatedFile),
-                originalPath: original?.path,
-                relativeDir: relative(root, dirname(basis.path)).replace(/\\/g, "/"),
-                tags: mergedMeta.tags ?? [],
-                title: mergedMeta.title,
-                translatedPath: translatedFile?.path,
-                updatedAt: new Date(updatedMs).toISOString()
-            });
-        }
-
-        return items.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+        return resolved;
     }
 
     private async resolveTranslatedMetaAsync(bookId: string): Promise<ReadBookMetaResult | undefined>
@@ -297,6 +305,181 @@ async function findBookFiles(dir: string): Promise<BookCandidate[]>
     return out;
 }
 
+async function scanBookFilesAsync(dataDir: string): Promise<LibraryItem[]>
+{
+    const root = resolve(dataDir, "books");
+
+    if (!existsSync(root))
+    {
+        return [];
+    }
+
+    const files = await findBookFiles(root);
+    const groups = new Map<string, BookCandidate[]>();
+
+    for (const file of files)
+    {
+        const bookId = extractBookId(file.path) ?? await extractBookIdFromMeta(file.path);
+
+        if (!bookId)
+        {
+            continue;
+        }
+
+        const current = groups.get(bookId) ?? [];
+        current.push(file);
+        groups.set(bookId, current);
+    }
+
+    const items: LibraryItem[] = [];
+
+    for (const [bookId, candidates] of groups)
+    {
+        const originals = candidates.filter((item) => !isTranslatedPath(item.path));
+        const translated = candidates.filter((item) => isTranslatedPath(item.path));
+        const originalTxt = latest(originals.filter((item) => item.path.toLowerCase().endsWith(".txt")));
+        const originalEpub = latest(originals.filter((item) => item.path.toLowerCase().endsWith(".epub")));
+        const translatedTxt = latest(translated.filter((item) => item.path.toLowerCase().endsWith(".txt")));
+        const translatedEpub = latest(translated.filter((item) => item.path.toLowerCase().endsWith(".epub")));
+        const original = originalTxt ?? originalEpub;
+        const translatedFile = translatedTxt ?? translatedEpub;
+        const basis = translatedTxt ?? originalTxt ?? translatedEpub ?? originalEpub;
+
+        if (!basis)
+        {
+            continue;
+        }
+
+        const meta = await readBookMeta(basis.path, bookId, dataDir);
+        const updatedMs = Math.max(...candidates.map((item) => item.modifiedMs));
+
+        items.push({
+            author: meta.author,
+            bookId,
+            coverUrl: meta.coverUrl,
+            description: meta.description,
+            hasOriginal: Boolean(original),
+            hasTranslated: Boolean(translatedFile),
+            originalPath: original?.path,
+            relativeDir: relative(root, dirname(basis.path)).replace(/\\/g, "/"),
+            tags: meta.tags ?? [],
+            title: meta.title,
+            translatedPath: translatedFile?.path,
+            updatedAt: new Date(updatedMs).toISOString()
+        });
+    }
+
+    return items;
+}
+
+async function scanJobFilesAsync(dataDir: string): Promise<LibraryItem[]>
+{
+    const root = resolve(dataDir, "jobs");
+
+    if (!existsSync(root))
+    {
+        return [];
+    }
+
+    const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+    const items: LibraryItem[] = [];
+
+    for (const entry of entries)
+    {
+        if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json"))
+        {
+            continue;
+        }
+
+        const path = resolve(root, entry.name);
+        const raw = await readFile(path, "utf8").catch(() => "");
+
+        if (!raw)
+        {
+            continue;
+        }
+
+        try
+        {
+            const job = JSON.parse(raw) as {
+                book?: BookInfo;
+                createdAt?: string;
+                files?: {
+                    originalEpub?: string;
+                    originalTxt?: string;
+                    translatedEpub?: string;
+                    translatedTxt?: string;
+                };
+                status?: string;
+                updatedAt?: string;
+            };
+
+            if (!job.book?.bookId || job.status !== "completed")
+            {
+                continue;
+            }
+
+            const originalPath = job.files?.originalTxt ?? job.files?.originalEpub;
+            const translatedPath = job.files?.translatedTxt ?? job.files?.translatedEpub;
+            const bestPath = translatedPath ?? originalPath;
+
+            items.push({
+                author: job.book.author,
+                bookId: job.book.bookId,
+                coverUrl: job.book.coverUrl,
+                description: job.book.description,
+                hasOriginal: Boolean(originalPath),
+                hasTranslated: Boolean(translatedPath),
+                originalPath,
+                relativeDir: bestPath ? relative(root, dirname(bestPath)).replace(/\\/g, "/") : "",
+                tags: job.book.tags,
+                title: job.book.title,
+                translatedPath,
+                updatedAt: job.updatedAt ?? job.createdAt ?? new Date().toISOString()
+            });
+        }
+        catch
+        {
+            continue;
+        }
+    }
+
+    return items;
+}
+
+function mergeLibraryItems(items: LibraryItem[]): LibraryItem[]
+{
+    const merged = new Map<string, LibraryItem>();
+
+    for (const item of items)
+    {
+        const current = merged.get(item.bookId);
+
+        if (!current)
+        {
+            merged.set(item.bookId, item);
+            continue;
+        }
+
+        merged.set(item.bookId, {
+            author: item.author ?? current.author,
+            bookId: item.bookId,
+            coverUrl: item.coverUrl ?? current.coverUrl,
+            description: item.description ?? current.description,
+            hasOriginal: current.hasOriginal || item.hasOriginal,
+            hasTranslated: current.hasTranslated || item.hasTranslated,
+            originalPath: current.originalPath ?? item.originalPath,
+            relativeDir: current.relativeDir || item.relativeDir,
+            tags: item.tags.length > 0 ? item.tags : current.tags,
+            title: item.title || current.title,
+            translatedPath: current.translatedPath ?? item.translatedPath,
+            updatedAt: current.updatedAt > item.updatedAt ? current.updatedAt : item.updatedAt
+        });
+    }
+
+    return [...merged.values()];
+}
+
 async function readBookMeta(path: string, fallbackBookId: string, dataDir: string): Promise<ReadBookMetaResult>
 {
     const meta = await readMetaFile(path, fallbackBookId, dataDir);
@@ -346,6 +529,7 @@ async function readMetaFile(
 {
     const candidates = [
         ...(fallbackBookId && dataDir ? [resolve(dataDir, "book-meta", `${fallbackBookId}.json`)] : []),
+        resolve(dirname(path), "manifest.json"),
         resolve(dirname(path), `${baseNameWithoutFormat(path)}.meta.json`),
         resolve(dirname(path), `${baseNameWithoutFormat(path).replace(/_vi$/i, "")}.meta.json`)
     ];
@@ -504,4 +688,18 @@ function escapeRegExp(input: string): string
 function normalize(input: string): string
 {
     return input.toLowerCase().replace(/\s+/g, "");
+}
+
+function paginateLibraryItems(items: LibraryItem[], page?: number, pageSize?: number): LibraryItem[]
+{
+    if (!page || !pageSize)
+    {
+        return items;
+    }
+
+    const safePage = Math.max(1, page);
+    const safePageSize = Math.max(1, pageSize);
+    const start = (safePage - 1) * safePageSize;
+
+    return items.slice(start, start + safePageSize);
 }

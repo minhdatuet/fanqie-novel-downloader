@@ -79,7 +79,6 @@ Fake server cho phép:
 
 Dùng Playwright:
 
-- Login.
 - Resolve book.
 - Start download.
 - Xem progress.
@@ -222,3 +221,12 @@ Nếu có GitHub Actions:
 - Upload artifact test report.
 - Không đưa `.env` vào CI log.
 
+## Trạng thái hiện tại
+
+- Đã thêm `GET /metrics` ở backend, trả Prometheus text nội bộ.
+- Đã có request id trên response và metrics request duration.
+- Đã có backup script `scripts/backup.mjs` và wrapper `scripts/backup.sh`.
+- Đã thêm Vitest cho backend với test path safety, spam guard và metrics.
+- Đã có load smoke script `tests/load/smoke.mjs` để kiểm tra flow tải truyện thực tế.
+- Đã có benchmark script `tests/load/autocannon.mjs` để đo tải HTTP.
+- Đã thêm fake legacy server mẫu ở `tests/fakes/legacy-server.mjs` cho luồng test/fake CI.

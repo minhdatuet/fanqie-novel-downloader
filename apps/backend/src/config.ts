@@ -13,11 +13,13 @@ const DEFAULT_TRANSLATION_MAX_BATCH_CHARACTERS = 8_000;
 const DEFAULT_TRANSLATION_PARAGRAPH_BATCH_PAUSE_MS = 200;
 const DEFAULT_TRANSLATION_PARAGRAPH_BATCH_SIZE = 20;
 const DEFAULT_TRANSLATION_SINGLE_PARAGRAPH_PAUSE_MS = 80;
+const DEFAULT_DAILY_JOB_QUOTA = 20;
 
 export interface AppConfig
 {
     dataDir: string;
     fanqieApiEndpoints: string[];
+    dailyJobQuota: number;
     host: string;
     jobConcurrency: number;
     legacyBridgeEnabled: boolean;
@@ -116,6 +118,7 @@ export function loadConfig(): AppConfig
     return {
         dataDir: resolveFromRoot(process.env.DATA_DIR ?? "./storage"),
         fanqieApiEndpoints: readEndpoints(),
+        dailyJobQuota: Math.max(1, readNumber("DAILY_JOB_QUOTA", DEFAULT_DAILY_JOB_QUOTA)),
         host: process.env.HOST ?? "0.0.0.0",
         jobConcurrency: Math.max(1, readNumber("JOB_CONCURRENCY", DEFAULT_JOB_CONCURRENCY)),
         legacyBridgeEnabled: legacyBridgeRequested && existsSync(legacyExePath),

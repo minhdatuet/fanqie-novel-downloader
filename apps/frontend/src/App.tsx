@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import {
+  getAdminOverview,
+  cancelJob,
   getLibrary,
   getLibraryByBookId,
   jobFileUrl,
@@ -9,10 +11,12 @@ import {
   startDownload,
   startLibraryTranslate,
   startTranslate,
+  retryJob,
   subscribeJob
 } from "./api";
-import type { BookInfo, DownloadPlan, JobRecord, LibraryItem } from "./types";
+import type { AdminOverview, BookInfo, DownloadPlan, JobRecord, LibraryItem } from "./types";
 import { Layout } from "./components/Layout";
+import { AdminDashboard } from "./components/AdminDashboard";
 import { NovelSearch } from "./components/NovelSearch";
 import { BookHero } from "./components/BookHero";
 import { JobStatus } from "./components/JobStatus";
@@ -22,7 +26,7 @@ import { parseBookId, getPageCount, getPageForBook } from "./utils";
 const LIBRARY_PAGE_SIZE = 20;
 
 type BusyAction = "resolve" | "download" | "translate" | "library" | undefined;
-type ViewMode = "download" | "library";
+type ViewMode = "admin" | "download" | "library";
 
 export function App(): React.JSX.Element {
   const [input, setInput] = useState("");
@@ -33,6 +37,7 @@ export function App(): React.JSX.Element {
   const [libraryPage, setLibraryPage] = useState(1);
   const [libraryQuery, setLibraryQuery] = useState("");
   const [focusedBookId, setFocusedBookId] = useState("");
+  const [adminOverview, setAdminOverview] = useState<AdminOverview>();
   const [viewMode, setViewMode] = useState<ViewMode>("download");
   const [busy, setBusy] = useState<BusyAction>();
   const [error, setError] = useState("");
@@ -71,6 +76,19 @@ export function App(): React.JSX.Element {
       }
     });
   }, [translateJob?.id]);
+
+  useEffect(() => {
+    if (viewMode !== "admin") {
+      return;
+    }
+
+    void refreshAdmin();
+    const timer = window.setInterval(() => {
+      void refreshAdmin();
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+  }, [viewMode]);
 
   const book = useMemo(() => plan?.book ?? downloadJob?.book, [downloadJob?.book, plan?.book]);
   const pageCount = getPageCount(libraryItems.length, LIBRARY_PAGE_SIZE);
@@ -129,6 +147,34 @@ export function App(): React.JSX.Element {
     });
   };
 
+  const handleCancelDownload = () => {
+    if (!downloadJob) return;
+    void runAction("download", async () => {
+      setDownloadJob(await cancelJob(downloadJob.id));
+    });
+  };
+
+  const handleRetryDownload = () => {
+    if (!downloadJob) return;
+    void runAction("download", async () => {
+      setDownloadJob(await retryJob(downloadJob.id));
+    });
+  };
+
+  const handleCancelTranslate = () => {
+    if (!translateJob) return;
+    void runAction("translate", async () => {
+      setTranslateJob(await cancelJob(translateJob.id));
+    });
+  };
+
+  const handleRetryTranslate = () => {
+    if (!translateJob) return;
+    void runAction("translate", async () => {
+      setTranslateJob(await retryJob(translateJob.id));
+    });
+  };
+
   const handleLibraryTranslate = (bookId: string) => {
     void runAction("translate", async () => {
       setFocusedBookId(bookId);
@@ -140,6 +186,12 @@ export function App(): React.JSX.Element {
     const data = await getLibrary(query);
     setLibraryItems(data.items);
     return data.items;
+  };
+
+  const refreshAdmin = async () => {
+    const data = await getAdminOverview();
+    setAdminOverview(data);
+    return data;
   };
 
   const focusLibraryBook = async (bookId: string) => {
@@ -196,8 +248,25 @@ export function App(): React.JSX.Element {
     void refreshLibrary("");
   };
 
+  const handleOpenAdmin = () => {
+    setViewMode("admin");
+    void refreshAdmin();
+  };
+
   return (
-    <Layout activeTab={viewMode} onTabChange={(tab) => tab === "library" ? handleOpenLibrary() : setViewMode(tab)}>
+    <Layout activeTab={viewMode} onTabChange={(tab) => {
+      if (tab === "library") {
+        handleOpenLibrary();
+        return;
+      }
+
+      if (tab === "admin") {
+        handleOpenAdmin();
+        return;
+      }
+
+      setViewMode("download");
+    }}>
       {viewMode === "download" ? (
         <div className="max-w-4xl mx-auto space-y-8">
           <section className="text-center space-y-4 mb-12">
@@ -234,6 +303,8 @@ export function App(): React.JSX.Element {
                       files: {}
                     } as JobRecord}
                     onAction={handleDownload}
+                    onCancel={handleCancelDownload}
+                    onRetry={handleRetryDownload}
                     downloadLabel="Tải truyện"
                     downloadOptions={downloadJob?.status === "completed"
                       ? [
@@ -251,6 +322,8 @@ export function App(): React.JSX.Element {
                     type="translate"
                     title="Dịch sang tiếng Việt"
                     job={translateJob}
+                    onCancel={handleCancelTranslate}
+                    onRetry={handleRetryTranslate}
                     downloadLabel="Tải truyện"
                     downloadOptions={translateJob.status === "completed"
                       ? [
@@ -290,7 +363,7 @@ export function App(): React.JSX.Element {
             </div>
           )}
         </div>
-      ) : (
+      ) : viewMode === "library" ? (
         <div className="animate-in fade-in duration-500">
           <LibraryTable
             items={pagedLibraryItems}
@@ -314,6 +387,8 @@ export function App(): React.JSX.Element {
                 type="translate"
                 title="Đang dịch truyện"
                 job={translateJob}
+                onCancel={handleCancelTranslate}
+                onRetry={handleRetryTranslate}
                 downloadLabel="Tải truyện"
                 downloadOptions={translateJob.status === "completed"
                   ? [
@@ -327,6 +402,14 @@ export function App(): React.JSX.Element {
             </div>
           )}
         </div>
+      ) : (
+        <AdminDashboard
+          busy={busy !== undefined}
+          overview={adminOverview}
+          onRefresh={() => {
+            void refreshAdmin();
+          }}
+        />
       )}
     </Layout>
   );

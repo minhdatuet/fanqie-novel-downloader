@@ -6,6 +6,7 @@
     "scripts": {
         "build": "tsc -p tsconfig.json",
         "dev": "node --env-file-if-exists=../../.env --watch --import tsx src/server.ts",
+        "test": "vitest run",
         "start": "node --env-file-if-exists=.env --env-file-if-exists=../../.env dist/server.js"
     },
     "dependencies": {
@@ -16,6 +17,7 @@
     },
     "devDependencies": {
         "@types/node": "^22.10.2",
+        "vitest": "^2.1.9",
         "tsx": "^4.19.2",
         "typescript": "^5.7.2"
     }

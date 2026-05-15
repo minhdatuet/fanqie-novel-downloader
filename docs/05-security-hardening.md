@@ -6,7 +6,7 @@ Nếu app được public Internet, bảo mật phải làm trước khi thêm n
 
 | Mức | Rủi ro | Hiện trạng | Cần làm |
 | --- | --- | --- | --- |
-| Cao | Không có auth | Ai truy cập được URL đều tạo job | Thêm login/session |
+| Cao | Không có auth | Ai truy cập được URL đều tạo job | Thêm rate limit, quota và validation |
 | Cao | CORS mở | `WEB_ORIGIN="*"` trong compose | Chỉ cho domain production |
 | Cao | Không rate limit | Có thể spam download/translate | Thêm rate limit và quota |
 | Cao | Queue in-memory | Restart mất queue | Persistent DB queue |
@@ -17,51 +17,18 @@ Nếu app được public Internet, bảo mật phải làm trước khi thêm n
 | Trung bình | Thiếu audit log | Không biết ai tạo job | Ghi audit logs |
 | Trung bình | Không giới hạn file/queue | Có thể đầy disk | Quota, cleanup, alert disk |
 
-## Auth tối thiểu
+## Phạm vi hiện tại không có auth
 
-Giai đoạn đầu chỉ cần một trong hai hướng:
+Project hiện tại không cần đăng ký hay đăng nhập.
+Lớp bảo vệ chính là:
 
-### Hướng A: Một admin account
+- Rate limit theo IP.
+- Validation schema cho toàn bộ API.
+- Quota theo IP và theo hệ thống.
+- Backpressure khi queue đầy.
+- Audit log cho thao tác nhạy cảm.
 
-Phù hợp khi chỉ có nhóm nhỏ dùng chung.
-
-- Tạo user admin từ CLI.
-- Login bằng username/password.
-- Session cookie HttpOnly.
-- Password hash bằng Argon2id hoặc bcrypt.
-
-### Hướng B: Invitation code
-
-Phù hợp khi muốn 20-30 user riêng.
-
-- Admin tạo mã mời.
-- User đăng ký bằng mã.
-- Mỗi user có quota riêng.
-
-Không nên dùng một biến `APP_PASSWORD` chung lâu dài nếu app public, vì không audit được từng người.
-
-## Session cookie
-
-Cookie production:
-
-```text
-HttpOnly
-Secure
-SameSite=Lax
-Path=/
-Max-Age=604800
-```
-
-Nếu frontend và backend cùng domain qua Nginx, dùng cookie là hợp lý. Nếu tách domain, cần cấu hình CORS credentials cẩn thận.
-
-## CSRF
-
-Nếu dùng cookie session:
-
-- Với `SameSite=Lax`, rủi ro đã giảm nhưng vẫn nên thêm CSRF token cho POST/PUT/DELETE.
-- API tạo job, cancel, retry phải kiểm tra CSRF token.
-
-Nếu dùng Bearer token trong localStorage thì tránh CSRF nhưng tăng rủi ro XSS. Với app này, cookie HttpOnly tốt hơn.
+Không ưu tiên session cookie, CSRF token hay invitation code trong giai đoạn đầu.
 
 ## CORS
 
@@ -83,11 +50,10 @@ Nếu chỉ serve frontend từ cùng Fastify/Nginx, có thể tắt CORS cho pr
 
 Endpoint cần giới hạn:
 
-- `POST /api/auth/login`: 5 lần/phút/IP.
-- `POST /api/books/resolve`: 30 lần/phút/user hoặc IP.
-- `POST /api/jobs/download`: 5 lần/10 phút/user, theo quota queue.
-- `POST /api/books/:bookId/translate`: 5 lần/10 phút/user.
-- `GET /api/jobs/:id/events`: giới hạn connection SSE theo user.
+- `POST /api/books/resolve`: 30 lần/phút/IP.
+- `POST /api/jobs/download`: 5 lần/10 phút/IP, theo quota queue.
+- `POST /api/books/:bookId/translate`: 5 lần/10 phút/IP.
+- `GET /api/jobs/:id/events`: giới hạn connection SSE theo IP.
 
 Có thể dùng:
 
@@ -143,13 +109,11 @@ Không commit:
 
 - `.env`
 - API key STV hoặc provider khác.
-- Session secret.
 - Admin password.
 
 Production cần có:
 
 ```env
-SESSION_SECRET=...
 STV_API_KEY=...
 ```
 
@@ -184,11 +148,10 @@ Khi trả file:
 
 Ghi các hành động:
 
-- Login thành công/thất bại.
 - Tạo job.
 - Cancel/retry job.
 - Tải file.
-- Lỗi auth/rate limit đáng chú ý.
+- Lỗi rate limit đáng chú ý.
 
 Audit log giúp debug khi có spam job hoặc disk đầy.
 
@@ -203,4 +166,14 @@ Docker runtime nên:
 - Read-only root filesystem nếu có thể.
 - `restart: unless-stopped`.
 - Có `HEALTHCHECK`.
+## Điều chỉnh theo hướng không có tài khoản
 
+Phạm vi hiện tại không cần đăng ký hay đăng nhập. Thay vào đó, lớp bảo vệ chính là:
+
+- Rate limit theo IP.
+- Validation schema cho toàn bộ API.
+- Giới hạn số job queued/running theo IP và toàn hệ thống.
+- Backpressure rõ ràng khi queue đầy.
+- Audit log cho thao tác tạo job, cancel, retry, tải file.
+
+Các đoạn nói về auth/session/cookie/CSRF và invitation code không còn là ưu tiên của phase đầu.

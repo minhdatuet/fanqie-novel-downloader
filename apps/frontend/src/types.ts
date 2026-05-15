@@ -27,6 +27,7 @@ export interface DownloadPlan
 export interface JobRecord
 {
     book?: BookInfo;
+    createdAt: string;
     error?: string;
     files: {
         chaptersJson?: string;
@@ -38,6 +39,7 @@ export interface JobRecord
     };
     id: string;
     kind: "download" | "translate";
+    input?: string;
     outputFormat?: DownloadFormat;
     progress: {
         current: number;
@@ -45,7 +47,9 @@ export interface JobRecord
         percent: number;
         total: number;
     };
-    status: "queued" | "running" | "completed" | "failed";
+    sourceJobId?: string;
+    status: "queued" | "running" | "completed" | "failed" | "canceled";
+    updatedAt: string;
 }
 
 export interface LibraryItem
@@ -59,4 +63,43 @@ export interface LibraryItem
     title: string;
     translatedPath?: string;
     updatedAt: string;
+}
+
+export interface QuotaSnapshot
+{
+    count: number;
+    key: string;
+    label: string;
+    limit: number;
+    remaining: number;
+    resetAt: string;
+}
+
+export interface AdminOverview
+{
+    counts: {
+        auditLogs: number;
+        books: number;
+        bookFiles: number;
+        jobs: Record<string, number>;
+    };
+    recentJobs: JobRecord[];
+    storage: {
+        appDbBytes: number;
+        booksBytes: number;
+        cacheBytes: number;
+        diskFreeBytes: number;
+        diskTotalBytes: number;
+        diskUsedBytes: number;
+        jobsBytes: number;
+        totalBytes: number;
+    };
+    quotas: QuotaSnapshot[];
+    system: {
+        dailyJobQuota: number;
+        jobConcurrency: number;
+        legacyBridgeEnabled: boolean;
+        maxWorkers: number;
+        requestTimeoutMs: number;
+    };
 }
