@@ -19,6 +19,7 @@ export interface AppConfig
 {
     adminHost: string;
     adminPort: number;
+    backupDir: string;
     dataDir: string;
     fanqieApiEndpoints: string[];
     dailyJobQuota: number;
@@ -120,6 +121,7 @@ export function loadConfig(): AppConfig
     return {
         adminHost: process.env.ADMIN_HOST ?? "127.0.0.1",
         adminPort: readNumber("ADMIN_PORT", 10052),
+        backupDir: resolveFromRoot(process.env.BACKUP_DIR ?? "./backups"),
         dataDir: resolveFromRoot(process.env.DATA_DIR ?? "./storage"),
         fanqieApiEndpoints: readEndpoints(),
         dailyJobQuota: Math.max(1, readNumber("DAILY_JOB_QUOTA", DEFAULT_DAILY_JOB_QUOTA)),
@@ -171,6 +173,7 @@ export function loadConfig(): AppConfig
 export async function ensureDataDirs(config: AppConfig): Promise<void>
 {
     await mkdir(config.dataDir, { recursive: true });
+    await mkdir(config.backupDir, { recursive: true });
     await mkdir(resolve(config.dataDir, "books"), { recursive: true });
     await mkdir(resolve(config.dataDir, "cache", "directory"), { recursive: true });
     await mkdir(resolve(config.dataDir, "jobs"), { recursive: true });

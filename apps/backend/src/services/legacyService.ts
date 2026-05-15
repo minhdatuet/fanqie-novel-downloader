@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 
 import type { FastifyReply } from "fastify";
@@ -46,12 +46,6 @@ interface LegacyJobsResponse
 interface LegacyStatus
 {
     save_dir?: string;
-}
-
-interface LocatedTextFile
-{
-    modifiedMs: number;
-    path: string;
 }
 
 interface LegacyConfigPatch
@@ -150,37 +144,6 @@ export class LegacyService
         return jobs.items.find((item) => item.id === id);
     }
 
-    public async findOutputTxt(bookId: string, title?: string): Promise<string | undefined>
-    {
-        const status = await this.requestJson<LegacyStatus>("/api/status");
-        const saveDir = status.save_dir;
-
-        if (!saveDir || !existsSync(saveDir))
-        {
-            return undefined;
-        }
-
-        const files = await findNovelFiles(saveDir);
-        const normalizedTitle = normalize(title ?? "");
-        const normalizedBookId = normalize(bookId);
-        const candidates = files.filter((file) =>
-        {
-            const text = normalize(file.path);
-            const isTranslated = text.includes("_vi.") || text.includes(".vi.");
-
-            if (isTranslated)
-            {
-                return false;
-            }
-
-            return text.includes(normalizedBookId) || (!!normalizedTitle && text.includes(normalizedTitle));
-        });
-        const sorted = (candidates.length > 0 ? candidates : files)
-            .sort((left, right) => right.modifiedMs - left.modifiedMs);
-
-        return sorted[0]?.path;
-    }
-
     public mapProgress(job: LegacyJob): ProgressState
     {
         const total = job.progress?.chapter_total ?? 1;
@@ -218,6 +181,23 @@ export class LegacyService
     public async warmUpAsync(): Promise<void>
     {
         await this.ensureRunning();
+    }
+
+    /**
+     * Lấy thư mục lưu trữ hiện tại của legacy backend.
+     * Trả về `undefined` nếu API status không cung cấp save dir hợp lệ.
+     */
+    public async getSaveDirAsync(): Promise<string | undefined>
+    {
+        const status = await this.requestJson<LegacyStatus>("/api/status");
+        const saveDir = status.save_dir?.trim();
+
+        if (!saveDir)
+        {
+            return undefined;
+        }
+
+        return saveDir;
     }
 
     private getCachedPreview(bookId: string): DownloadPlan | undefined
@@ -390,45 +370,6 @@ function mapLegacyStateMessage(state: LegacyJob["state"]): string
         default:
             return "Đang xử lý";
     }
-}
-
-async function findNovelFiles(dir: string): Promise<LocatedTextFile[]>
-{
-    const out: LocatedTextFile[] = [];
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-
-    for (const entry of entries)
-    {
-        const path = resolve(dir, entry.name);
-
-        if (entry.isDirectory())
-        {
-            out.push(...await findNovelFiles(path));
-            continue;
-        }
-
-        if (!entry.isFile() || !/\.(txt|epub)$/i.test(entry.name))
-        {
-            continue;
-        }
-
-        const info = await stat(path).catch(() => undefined);
-
-        if (info)
-        {
-            out.push({
-                modifiedMs: info.mtimeMs,
-                path
-            });
-        }
-    }
-
-    return out;
-}
-
-function normalize(input: string): string
-{
-    return input.toLowerCase().replace(/\s+/g, "");
 }
 
 function sleep(ms: number): Promise<void>

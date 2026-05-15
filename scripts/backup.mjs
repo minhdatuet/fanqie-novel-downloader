@@ -8,22 +8,56 @@ const dataDir = resolve(process.env.DATA_DIR ?? join(repoRoot, "storage"));
 const backupDir = resolve(process.env.BACKUP_DIR ?? join(repoRoot, "backups"));
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const targetDir = join(backupDir, `storage-${stamp}`);
+const statusPath = join(backupDir, "backup-status.json");
 
-await mkdir(targetDir, { recursive: true });
-await cp(dataDir, targetDir, {
-    recursive: true,
-    preserveTimestamps: true
-});
+await mkdir(backupDir, { recursive: true });
 
-const manifest = {
-    createdAt: new Date().toISOString(),
-    dataDir,
-    files: await countFilesAsync(targetDir),
-    sizeBytes: await getDirectorySizeAsync(targetDir)
-};
+try
+{
+    await mkdir(targetDir, { recursive: true });
+    await cp(dataDir, targetDir, {
+        recursive: true,
+        preserveTimestamps: true
+    });
 
-await writeFile(join(targetDir, "backup-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-console.log(JSON.stringify(manifest, null, 2));
+    const manifest = {
+        createdAt: new Date().toISOString(),
+        dataDir,
+        files: await countFilesAsync(targetDir),
+        sizeBytes: await getDirectorySizeAsync(targetDir)
+    };
+
+    await writeFile(join(targetDir, "backup-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    await writeStatusAsync(statusPath, {
+        backupDir,
+        dataDir,
+        error: null,
+        lastRunAt: manifest.createdAt,
+        manifestPath: join(targetDir, "backup-manifest.json"),
+        success: true,
+        targetDir
+    });
+    console.log(JSON.stringify(manifest, null, 2));
+}
+catch (error)
+{
+    const failedAt = new Date().toISOString();
+    const message = error instanceof Error ? error.message : String(error);
+    await writeStatusAsync(statusPath, {
+        backupDir,
+        dataDir,
+        error: message,
+        lastRunAt: failedAt,
+        success: false,
+        targetDir
+    });
+    throw error;
+}
+
+async function writeStatusAsync(path, status)
+{
+    await writeFile(path, `${JSON.stringify(status, null, 2)}\n`, "utf8");
+}
 
 async function getDirectorySizeAsync(path)
 {

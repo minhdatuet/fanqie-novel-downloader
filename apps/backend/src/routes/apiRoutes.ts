@@ -1,4 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { resolve } from "node:path";
 
 import type { AppConfig } from "../config.js";
 import type { DownloadFormat } from "../types.js";
@@ -77,6 +79,23 @@ interface AdminOverview
         books: number;
         bookFiles: number;
         jobs: Record<string, number>;
+    };
+    operations: {
+        completedDownloadBytesPerSecond: number;
+        completedDownloadCount: number;
+        errorEventsLastWindow: number;
+        failedJobsLastWindow: number;
+        queueDepth: number;
+        runningDepth: number;
+        windowHours: number;
+    };
+    backup: {
+        backupDir: string;
+        error?: string;
+        lastRunAt?: string;
+        manifestPath?: string;
+        success: boolean;
+        targetDir?: string;
     };
     recentJobs: ReturnType<DatabaseService["listRecentJobs"]>;
     storage: {
@@ -658,7 +677,9 @@ export async function registerApiRoutes(
 
         const recentJobs = database.listRecentJobs(12);
         const jobCounts = database.getJobCounts();
+        const operations = database.getOperationalMetrics(24);
         const storage = await getStorageSummaryAsync(config.dataDir);
+        const backup = loadBackupStatus(config.backupDir);
 
         const overview: AdminOverview = {
             counts: {
@@ -667,6 +688,8 @@ export async function registerApiRoutes(
                 bookFiles: database.getBookFileCount(),
                 jobs: jobCounts
             },
+            operations,
+            backup,
             recentJobs,
             storage,
             quotas: quotaService.snapshot(),
@@ -681,6 +704,42 @@ export async function registerApiRoutes(
 
         return overview;
     });
+}
+
+function loadBackupStatus(backupDir: string): AdminOverview["backup"]
+{
+    const statusPath = resolve(backupDir, "backup-status.json");
+
+    if (!existsSync(statusPath))
+    {
+        return {
+            backupDir,
+            success: false
+        };
+    }
+
+    try
+    {
+        const raw = readFileSync(statusPath, "utf8");
+        const parsed = JSON.parse(raw) as Partial<AdminOverview["backup"]>;
+
+        return {
+            backupDir,
+            error: parsed.error,
+            lastRunAt: parsed.lastRunAt,
+            manifestPath: parsed.manifestPath,
+            success: parsed.success ?? false,
+            targetDir: parsed.targetDir
+        };
+    }
+    catch
+    {
+        return {
+            backupDir,
+            error: "Không đọc được backup-status.json",
+            success: false
+        };
+    }
 }
 
 function createRateLimitPreHandler(

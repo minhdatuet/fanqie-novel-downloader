@@ -77,11 +77,28 @@ export interface QuotaSnapshot
 
 export interface AdminOverview
 {
+    backup: {
+        backupDir: string;
+        error?: string;
+        lastRunAt?: string;
+        manifestPath?: string;
+        success: boolean;
+        targetDir?: string;
+    };
     counts: {
         auditLogs: number;
         books: number;
         bookFiles: number;
         jobs: Record<string, number>;
+    };
+    operations: {
+        completedDownloadBytesPerSecond: number;
+        completedDownloadCount: number;
+        errorEventsLastWindow: number;
+        failedJobsLastWindow: number;
+        queueDepth: number;
+        runningDepth: number;
+        windowHours: number;
     };
     recentJobs: JobRecord[];
     storage: {

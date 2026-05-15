@@ -22,7 +22,9 @@ import {
     writeTextFileAtomic
 } from "../utils/file.js";
 import { JobArtifactService } from "./jobArtifactService.js";
+import { BookMetadataTranslationService } from "./bookMetadataTranslationService.js";
 import { FanqieService } from "./fanqieService.js";
+import { LegacyOutputLocatorService } from "./legacyOutputLocatorService.js";
 import { LegacyService } from "./legacyService.js";
 import { type LibraryItem, LibraryService } from "./libraryService.js";
 import type { QuotaService } from "./quotaService.js";
@@ -34,12 +36,6 @@ interface ChapterProgress
     current: number;
     message: string;
     total: number;
-}
-
-interface CoverImageData
-{
-    data: Buffer;
-    mimeType: string;
 }
 
 const JOB_CANCELLED_ERROR_MESSAGE = "Job Ä‘Ã£ bá»‹ há»§y";
@@ -56,15 +52,13 @@ export class JobService
     private readonly database?: DatabaseService;
     private readonly legacy: LegacyService;
     private readonly legacyJobMap = new Map<string, number>();
-    private readonly metadataCache = new Map<string, {
-        expiresAt: number;
-        book: BookInfo;
-    }>();
+    private readonly _legacyOutputLocator: LegacyOutputLocatorService;
     private readonly library: LibraryService;
     private activeTasks = 0;
     private readonly queueWorkerId = randomUUID();
     private readonly queueTimer: NodeJS.Timeout;
     private readonly translator: TranslatorService;
+    private readonly _bookMetadataTranslator: BookMetadataTranslationService;
     private readonly quotaService?: QuotaService;
     private readonly cancelRequestedJobs = new Set<string>();
     private isClosed = false;
@@ -84,7 +78,12 @@ export class JobService
         this.legacy = new LegacyService(config);
         this.library = library ?? new LibraryService(config, database);
         this.artifacts = new JobArtifactService(config, database, this.library, (jobId) => this.getJob(jobId));
+        this._legacyOutputLocator = new LegacyOutputLocatorService(this.library, () => this.legacy.getSaveDirAsync());
         this.translator = new TranslatorService(config);
+        this._bookMetadataTranslator = new BookMetadataTranslationService(
+            this.translator,
+            (jobId) => this.throwIfCancelled(jobId)
+        );
         this.quotaService = quotaService;
         this.events.setMaxListeners(500);
 
@@ -207,18 +206,6 @@ export class JobService
     public getJob(id: string): JobRecord | undefined
     {
         return this.jobs.get(id) ?? this.database?.getJob(id);
-    }
-
-    private getCachedTranslatedBook(bookId: string): BookInfo | undefined
-    {
-        const cached = this.metadataCache.get(bookId);
-
-        if (!cached || cached.expiresAt <= Date.now())
-        {
-            return undefined;
-        }
-
-        return cached.book;
     }
 
     /**
@@ -400,11 +387,16 @@ export class JobService
                 });
             });
 
-                        this.throwIfCancelled(jobId);
+            this.throwIfCancelled(jobId);
             this.update(jobId, {
                 progress: progress(99, 100, "Đang ghi file và cập nhật thư viện")
             });
-            const originalPath = await this.artifacts.saveDownloadedBookAsync(jobId, plan.book, chapters, translatedBook);
+            const originalPath = await this.artifacts.saveDownloadedBookAsync(
+                jobId,
+                plan.book,
+                chapters,
+                translatedBook
+            );
             this.library.invalidate();
 
             this.update(jobId, {
@@ -472,7 +464,7 @@ export class JobService
                     if (current.state === "done")
                     {
                         this.throwIfCancelled(jobId);
-                        const originalPath = await this.legacy.findOutputTxt(
+                        const originalPath = await this._legacyOutputLocator.resolveOriginalPathAsync(
                             current.book_id,
                             plan.book.title
                         );
@@ -649,135 +641,7 @@ export class JobService
 
     private async translateBookMetadataAsync(book: BookInfo, jobId: string): Promise<BookInfo>
     {
-        this.throwIfCancelled(jobId);
-        const cached = this.metadataCache.get(book.bookId);
-
-        if (cached && cached.expiresAt > Date.now())
-        {
-            this.throwIfCancelled(jobId);
-            this.library.invalidate();
-            return cached.book;
-        }
-
-        const title = await this.translateSingleLineAsync(book.title);
-        const author = await this.translateAuthorAsync(book.author);
-        const description = await this.translateDescriptionAsync(book.description);
-        const tags = await this.translateTagsAsync(book.tags, jobId);
-
-        const translatedBook = {
-            ...book,
-            author,
-            description,
-            tags,
-            title
-        };
-
-        this.metadataCache.set(book.bookId, {
-            book: translatedBook,
-            expiresAt: Date.now() + 30 * 60 * 1000
-        });
-        this.library.invalidate();
-
-        return translatedBook;
-    }
-
-    private async translateDescriptionAsync(description: string | undefined): Promise<string | undefined>
-    {
-        if (!description?.trim())
-        {
-            return description;
-        }
-
-        const translated = await this.translateSafeAsync(description);
-        const normalized = normalizeTranslatedText(translated);
-
-        return normalized || description;
-    }
-
-    private async translateAuthorAsync(author: string | undefined): Promise<string | undefined>
-    {
-        if (!author?.trim())
-        {
-            return author;
-        }
-
-        const translated = await this.translateSafeAsync(author);
-        const normalized = normalizeTranslatedText(translated).replace(/\s+/g, " ").trim();
-
-        return normalized || author;
-    }
-
-    private async translateSingleLineAsync(text: string): Promise<string>
-    {
-        const translated = await this.translateSafeAsync(text);
-        const normalized = normalizeTranslatedText(translated).replace(/\s+/g, " ").trim();
-
-        return normalized || text;
-    }
-
-    private async translateTagsAsync(tags: readonly string[], jobId: string): Promise<string[]>
-    {
-        if (tags.length === 0)
-        {
-            return [];
-        }
-
-        const translated: string[] = [];
-
-        for (const tag of tags)
-        {
-            this.throwIfCancelled(jobId);
-            translated.push(await this.translateSingleLineAsync(tag));
-        }
-
-        return translated.filter(Boolean);
-    }
-
-    private async translateSafeAsync(text: string): Promise<string>
-    {
-        try
-        {
-            return await this.translator.translateText(text);
-        }
-        catch
-        {
-            return text;
-        }
-    }
-
-    private async loadCoverImageAsync(coverUrl?: string): Promise<CoverImageData | undefined>
-    {
-        if (!coverUrl?.trim())
-        {
-            return undefined;
-        }
-
-        try
-        {
-            const imageUrl = new URL(
-                coverUrl,
-                `http://${this.config.legacyHost}:${this.config.legacyPort}`
-            );
-            const response = await fetch(imageUrl, {
-                signal: AbortSignal.timeout(this.config.requestTimeoutMs * 2)
-            });
-
-            if (!response.ok)
-            {
-                return undefined;
-            }
-
-            const mimeType = response.headers.get("content-type")?.split(";")[0]?.trim() || "image/jpeg";
-
-            return {
-                data: Buffer.from(await response.arrayBuffer()),
-                mimeType
-            };
-        }
-        catch
-        {
-            return undefined;
-        }
+        return this._bookMetadataTranslator.translateBookMetadataAsync(book, jobId);
     }
 
     private createJob(
@@ -1012,10 +876,18 @@ export class JobService
                 book: this.library.toBookInfo(item),
                 createdAt: item.updatedAt,
                 files: {
-                    originalEpub: item.originalPath?.toLowerCase().endsWith(".epub") ? item.originalPath : undefined,
-                    originalTxt: item.originalPath?.toLowerCase().endsWith(".txt") ? item.originalPath : undefined,
-                    translatedEpub: item.translatedPath?.toLowerCase().endsWith(".epub") ? item.translatedPath : undefined,
-                    translatedTxt: item.translatedPath?.toLowerCase().endsWith(".txt") ? item.translatedPath : undefined
+                    originalEpub: item.originalPath?.toLowerCase().endsWith(".epub")
+                        ? item.originalPath
+                        : undefined,
+                    originalTxt: item.originalPath?.toLowerCase().endsWith(".txt")
+                        ? item.originalPath
+                        : undefined,
+                    translatedEpub: item.translatedPath?.toLowerCase().endsWith(".epub")
+                        ? item.translatedPath
+                        : undefined,
+                    translatedTxt: item.translatedPath?.toLowerCase().endsWith(".txt")
+                        ? item.translatedPath
+                        : undefined
                 },
                 id: job.sourceJobId,
                 input: bookId,
@@ -1087,7 +959,12 @@ export class JobService
         }
     }
 
-    private recordJobEvent(jobId: string, level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>): void
+    private recordJobEvent(
+        jobId: string,
+        level: "info" | "warn" | "error",
+        message: string,
+        data?: Record<string, unknown>
+    ): void
     {
         if (this.isClosed)
         {
@@ -1243,14 +1120,5 @@ function cleanTitle(input: string): string
 function sleep(ms: number): Promise<void>
 {
     return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
-}
-
-function normalizeTranslatedText(text: string): string
-{
-    return text
-        .replace(/^\[Dá»‹ch\]\s*/i, "")
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n")
-        .trim();
 }
 

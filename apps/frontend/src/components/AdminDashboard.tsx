@@ -1,4 +1,4 @@
-import { Activity, Database, HardDrive, RefreshCw, ShieldCheck, Timer } from "lucide-react";
+import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, ShieldCheck, Timer, TrendingUp } from "lucide-react";
 
 import type { AdminOverview } from "../types";
 import { Button } from "./ui/Button";
@@ -20,6 +20,8 @@ export function AdminDashboard({ busy, overview, onRefresh }: AdminDashboardProp
     const completed = jobs.completed ?? 0;
     const failed = jobs.failed ?? 0;
     const canceled = jobs.canceled ?? 0;
+    const operations = overview?.operations;
+    const backup = overview?.backup;
 
     return (
         <div className="space-y-6">
@@ -42,6 +44,58 @@ export function AdminDashboard({ busy, overview, onRefresh }: AdminDashboardProp
                 <MetricCard title="Job chạy" value={running} description={`Đang chờ ${queued} / hoàn tất ${completed}`} icon={<Activity className="h-4 w-4" />} />
                 <MetricCard title="Audit log" value={overview?.counts.auditLogs ?? 0} description={`Hủy ${canceled} / lỗi ${failed}`} icon={<ShieldCheck className="h-4 w-4" />} />
             </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard
+                    title="Queue depth"
+                    value={operations?.queueDepth ?? queued}
+                    description={`Đang chạy ${operations?.runningDepth ?? running} job`}
+                    icon={<Timer className="h-4 w-4" />}
+                />
+                <MetricCard
+                    title="Lỗi 24h"
+                    value={operations?.errorEventsLastWindow ?? 0}
+                    description={`Failed ${operations?.failedJobsLastWindow ?? 0} / ${operations?.windowHours ?? 24}h`}
+                    icon={<AlertTriangle className="h-4 w-4" />}
+                />
+                <MetricCard
+                    title="Tốc độ tải"
+                    value={Math.round(operations?.completedDownloadBytesPerSecond ?? 0)}
+                    description={`${operations?.completedDownloadCount ?? 0} job hoàn tất / ${operations?.windowHours ?? 24}h`}
+                    icon={<TrendingUp className="h-4 w-4" />}
+                    formatValue={(value) => `${formatBytes(value)}/s`}
+                />
+                <MetricCard
+                    title="Backup"
+                    value={backup?.success ? 1 : 0}
+                    description={backup?.success ? "Lần backup gần nhất OK" : "Có lỗi backup gần nhất"}
+                    icon={<ShieldCheck className="h-4 w-4" />}
+                    formatValue={(value) => (value > 0 ? "OK" : "FAIL")}
+                />
+            </div>
+
+            <Card className="border-none bg-secondary/40 shadow-md backdrop-blur-sm dark:bg-secondary/20">
+                <CardHeader>
+                    <CardTitle>Backup gần nhất</CardTitle>
+                    <CardDescription>Trạng thái được đọc từ `backup-status.json` trong thư mục backup.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                    {backup?.success ? (
+                        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-700 dark:text-emerald-300">
+                            Backup gần nhất thành công{backup.lastRunAt ? ` lúc ${new Date(backup.lastRunAt).toLocaleString()}` : ""}.
+                        </div>
+                    ) : (
+                        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-destructive">
+                            <div className="font-semibold">Backup gần nhất thất bại</div>
+                            <div className="mt-1">{backup?.error || "Chưa có trạng thái backup hợp lệ."}</div>
+                        </div>
+                    )}
+                    <div className="grid gap-3 md:grid-cols-2">
+                        <InfoRow label="Backup dir" value={backup?.backupDir ?? "-"} />
+                        <InfoRow label="Manifest" value={backup?.manifestPath ?? "-"} />
+                    </div>
+                </CardContent>
+            </Card>
 
             <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
                 <Card className="border-none bg-secondary/40 shadow-md backdrop-blur-sm dark:bg-secondary/20">
@@ -189,9 +243,10 @@ export function AdminDashboard({ busy, overview, onRefresh }: AdminDashboardProp
 }
 
 function MetricCard(
-    { title, value, description, icon }: {
+    { title, value, description, icon, formatValue }: {
         description: string;
         icon: React.ReactNode;
+        formatValue?: (value: number) => string;
         title: string;
         value: number;
     }
@@ -203,7 +258,7 @@ function MetricCard(
                 <div className="flex items-start justify-between gap-3">
                     <div>
                         <div className="text-sm text-muted-foreground">{title}</div>
-                        <div className="mt-2 text-3xl font-black tracking-tight">{value}</div>
+                        <div className="mt-2 text-3xl font-black tracking-tight">{formatValue ? formatValue(value) : value}</div>
                         <div className="mt-1 text-xs text-muted-foreground">{description}</div>
                     </div>
                     <div className="rounded-full bg-primary/10 p-2 text-primary">
@@ -212,6 +267,16 @@ function MetricCard(
                 </div>
             </CardContent>
         </Card>
+    );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }): React.JSX.Element
+{
+    return (
+        <div className="rounded-lg border bg-background/60 p-3">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+            <div className="mt-1 break-all text-sm font-medium">{value}</div>
+        </div>
     );
 }
 

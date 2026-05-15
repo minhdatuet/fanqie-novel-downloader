@@ -79,6 +79,17 @@ interface DbJobRow
     user_id: string | null;
 }
 
+export interface OperationalMetrics
+{
+    completedDownloadBytesPerSecond: number;
+    completedDownloadCount: number;
+    errorEventsLastWindow: number;
+    failedJobsLastWindow: number;
+    queueDepth: number;
+    runningDepth: number;
+    windowHours: number;
+}
+
 export class DatabaseService
 {
     private readonly db: DatabaseSync;
@@ -629,6 +640,75 @@ export class DatabaseService
     {
         const row = this.db.prepare("SELECT COUNT(*) AS count FROM audit_logs").get() as { count: number } | undefined;
         return row?.count ?? 0;
+    }
+
+    public getOperationalMetrics(windowHours = 24): OperationalMetrics
+    {
+        const safeWindowHours = Math.max(1, windowHours);
+        const cutoff = new Date(Date.now() - safeWindowHours * 60 * 60 * 1000).toISOString();
+        const queueCounts = this.db.prepare(
+            `
+            SELECT
+                SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
+                SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running
+            FROM jobs
+            `
+        ).get() as { queued: number | null; running: number | null } | undefined;
+        const eventCounts = this.db.prepare(
+            `
+            SELECT COUNT(*) AS count
+            FROM job_events
+            WHERE level = 'error'
+              AND created_at >= ?
+            `
+        ).get(cutoff) as { count: number } | undefined;
+        const failedJobs = this.db.prepare(
+            `
+            SELECT COUNT(*) AS count
+            FROM jobs
+            WHERE status = 'failed'
+              AND updated_at >= ?
+            `
+        ).get(cutoff) as { count: number } | undefined;
+        const downloadStats = this.db.prepare(
+            `
+            SELECT
+                COUNT(*) AS count,
+                COALESCE(SUM(COALESCE(bf.size_bytes, 0)), 0) AS total_size_bytes,
+                COALESCE(SUM(
+                    CASE
+                        WHEN j.started_at IS NOT NULL
+                         AND j.finished_at IS NOT NULL
+                         AND j.finished_at > j.started_at
+                        THEN (julianday(j.finished_at) - julianday(j.started_at)) * 86400.0
+                        ELSE 0
+                    END
+                ), 0) AS total_duration_seconds
+            FROM jobs j
+            JOIN book_files bf
+              ON bf.created_by_job_id = j.id
+             AND bf.kind = 'original'
+            WHERE j.type = 'download'
+              AND j.status = 'completed'
+              AND j.finished_at >= ?
+            `
+        ).get(cutoff) as {
+            count: number;
+            total_duration_seconds: number;
+            total_size_bytes: number;
+        } | undefined;
+        const totalSizeBytes = downloadStats?.total_size_bytes ?? 0;
+        const totalDurationSeconds = downloadStats?.total_duration_seconds ?? 0;
+
+        return {
+            completedDownloadBytesPerSecond: totalDurationSeconds > 0 ? totalSizeBytes / totalDurationSeconds : 0,
+            completedDownloadCount: downloadStats?.count ?? 0,
+            errorEventsLastWindow: eventCounts?.count ?? 0,
+            failedJobsLastWindow: failedJobs?.count ?? 0,
+            queueDepth: queueCounts?.queued ?? 0,
+            runningDepth: queueCounts?.running ?? 0,
+            windowHours: safeWindowHours
+        };
     }
 
     private normalizeFileInput(bookId: string, kind: "original" | "translated", path: string): DbFileInput
