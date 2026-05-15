@@ -4,10 +4,11 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "npm run build -w apps/backend && npm run build -w apps/frontend",
+        "build": "npm run build -w apps/backend && npm run build -w apps/frontend && npm run build -w apps/admin",
         "dev": "npm-run-all --parallel dev:backend dev:frontend",
         "dev:backend": "npm run dev -w apps/backend",
         "dev:frontend": "npm run dev -w apps/frontend",
+        "dev:admin": "npm run dev -w apps/admin",
         "db:migrate": "node scripts/migrate-storage-to-db.mjs",
         "legacy:copy": "node scripts/copy-legacy.mjs",
         "legacy:start": "node --env-file-if-exists=.env scripts/start-legacy-webui.mjs",
@@ -19,7 +20,8 @@
     },
     "workspaces": [
         "apps/backend",
-        "apps/frontend"
+        "apps/frontend",
+        "apps/admin"
     ],
     "devDependencies": {
         "autocannon": "^8.0.0",

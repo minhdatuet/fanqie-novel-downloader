@@ -19,6 +19,8 @@ import { LibraryService } from "./services/libraryService.js";
 import { QuotaService } from "./services/quotaService.js";
 import { SpamGuardService } from "./services/spamGuard.js";
 
+let adminServer: FastifyInstance | undefined;
+
 export async function buildAppAsync(config: AppConfig = loadConfig()): Promise<FastifyInstance>
 {
     await ensureDataDirs(config);
@@ -41,6 +43,7 @@ export async function buildAppAsync(config: AppConfig = loadConfig()): Promise<F
     const jobService = new JobService(config, database, libraryService, quotaService);
     const auditLogService = new AuditLogService(config);
     const spamGuard = new SpamGuardService();
+    const adminPortalToken = randomUUID();
 
     app.addHook("onRequest", async (request, reply) =>
     {
@@ -64,6 +67,13 @@ export async function buildAppAsync(config: AppConfig = loadConfig()): Promise<F
     app.addHook("onClose", async () =>
     {
         clearInterval(cleanupTimer);
+
+        if (adminServer)
+        {
+            await adminServer.close().catch(() => undefined);
+            adminServer = undefined;
+        }
+
         metricsService.close();
         jobService.close();
         database.close();
@@ -134,7 +144,23 @@ export async function buildAppAsync(config: AppConfig = loadConfig()): Promise<F
         }
     });
 
-    await registerApiRoutes(app, jobService, libraryService, database, config, spamGuard, auditLogService, quotaService);
+    await registerApiRoutes(
+        app,
+        jobService,
+        libraryService,
+        database,
+        config,
+        spamGuard,
+        auditLogService,
+        quotaService,
+        adminPortalToken
+    );
+
+    adminServer = await startAdminServerAsync(config, app.log, adminPortalToken).catch((error) =>
+    {
+        app.log.warn({ error }, "Không thể khởi động cổng admin riêng");
+        return undefined;
+    });
 
     app.get("/metrics", async (request, reply) =>
     {
@@ -155,12 +181,12 @@ export async function buildAppAsync(config: AppConfig = loadConfig()): Promise<F
         }));
     });
 
-    await libraryService.migrateBookMetaAsync().catch((error) =>
+    void libraryService.migrateBookMetaAsync().catch((error) =>
     {
         app.log.warn({ error }, "Không thể migrate metadata thư viện");
     });
 
-    await jobService.warmLegacyAsync().catch((error) =>
+    void jobService.warmLegacyAsync().catch((error) =>
     {
         app.log.warn({ error }, "Không thể khởi động sớm legacy backend");
     });
@@ -254,6 +280,118 @@ async function cleanupTemporaryArtifactsAsync(rootDir: string): Promise<void>
     };
 
     await visit(rootDir);
+}
+
+async function startAdminServerAsync(
+    config: AppConfig,
+    logger: FastifyInstance["log"],
+    adminPortalToken: string
+): Promise<FastifyInstance | undefined>
+{
+    const currentDir = dirname(fileURLToPath(import.meta.url));
+    const adminDist = resolve(currentDir, "..", "..", "admin", "dist");
+
+    if (!existsSync(adminDist))
+    {
+        logger.info("Không tìm thấy bản build admin, bỏ qua cổng admin riêng");
+        return undefined;
+    }
+
+    const adminApp = fastify({
+        logger: true
+    });
+
+    await adminApp.register(fastifyStatic, {
+        prefix: "/",
+        root: adminDist
+    });
+
+    adminApp.all("/api/admin/*", async (request, reply) =>
+    {
+        const backendUrl = new URL(request.url, `http://127.0.0.1:${config.port}`);
+        const response = await fetch(backendUrl, {
+            headers: {
+                ...copyRequestHeaders(request.headers),
+                "x-admin-portal": adminPortalToken
+            },
+            method: request.method
+        });
+
+        return proxyFetchResponse(reply, response);
+    });
+
+    adminApp.setNotFoundHandler((request, reply) =>
+    {
+        if (request.url.startsWith("/api/"))
+        {
+            return reply.code(404).send({
+                error: "Không tìm thấy API admin"
+            });
+        }
+
+        return reply.sendFile("index.html");
+    });
+
+    await adminApp.listen({
+        host: config.adminHost,
+        port: config.adminPort
+    });
+
+    logger.info(
+        {
+            adminHost: config.adminHost,
+            adminPort: config.adminPort
+        },
+        "Đã khởi động cổng admin riêng"
+    );
+
+    return adminApp;
+}
+
+function copyRequestHeaders(headers: Record<string, unknown>): HeadersInit
+{
+    const result: Record<string, string> = {};
+
+    for (const [key, value] of Object.entries(headers))
+    {
+        if (value === undefined)
+        {
+            continue;
+        }
+
+        if (key === "host" || key === "content-length")
+        {
+            continue;
+        }
+
+        if (Array.isArray(value))
+        {
+            result[key] = value.join(", ");
+            continue;
+        }
+
+        result[key] = String(value);
+    }
+
+    return result;
+}
+
+async function proxyFetchResponse(reply: any, response: Response): Promise<void>
+{
+    reply.code(response.status);
+
+    response.headers.forEach((value, key) =>
+    {
+        if (key.toLowerCase() === "transfer-encoding")
+        {
+            return;
+        }
+
+        reply.header(key, value);
+    });
+
+    const body = await response.arrayBuffer();
+    return reply.send(Buffer.from(body));
 }
 
 function getRoutePattern(request: FastifyRequest): string

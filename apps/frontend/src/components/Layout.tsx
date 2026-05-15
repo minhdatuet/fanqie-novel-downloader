@@ -1,5 +1,5 @@
 import React from "react";
-import { BookOpen, Download, Library, Shield } from "lucide-react";
+import { BookOpen, Download, Library } from "lucide-react";
 
 import { ThemeToggle } from "./ThemeToggle";
 import { cn } from "./ui/utils";
@@ -7,8 +7,8 @@ import { cn } from "./ui/utils";
 interface LayoutProps
 {
     children: React.ReactNode;
-    activeTab: "admin" | "download" | "library";
-    onTabChange: (tab: "admin" | "download" | "library") => void;
+    activeTab: "download" | "library";
+    onTabChange: (tab: "download" | "library") => void;
 }
 
 export function Layout({ children, activeTab, onTabChange }: LayoutProps): React.JSX.Element
@@ -50,18 +50,6 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps): React
                         >
                             <Library className="h-4 w-4" />
                             <span className="hidden sm:inline">Thư viện</span>
-                        </button>
-                        <button
-                            onClick={() => onTabChange("admin")}
-                            className={cn(
-                                "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                                activeTab === "admin"
-                                    ? "bg-secondary text-secondary-foreground"
-                                    : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                            )}
-                        >
-                            <Shield className="h-4 w-4" />
-                            <span className="hidden sm:inline">Quản trị</span>
                         </button>
                         <div className="ml-2 border-l pl-2">
                             <ThemeToggle />

@@ -1,416 +1,460 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
+
 import {
-  getAdminOverview,
-  cancelJob,
-  getLibrary,
-  getLibraryByBookId,
-  jobFileUrl,
-  libraryFileUrl,
-  resolveBook,
-  startDownload,
-  startLibraryTranslate,
-  startTranslate,
-  retryJob,
-  subscribeJob
+    cancelJob,
+    getLibrary,
+    getLibraryByBookId,
+    jobFileUrl,
+    libraryFileUrl,
+    resolveBook,
+    retryJob,
+    startDownload,
+    startLibraryTranslate,
+    startTranslate,
+    subscribeJob
 } from "./api";
-import type { AdminOverview, BookInfo, DownloadPlan, JobRecord, LibraryItem } from "./types";
-import { Layout } from "./components/Layout";
-import { AdminDashboard } from "./components/AdminDashboard";
-import { NovelSearch } from "./components/NovelSearch";
+import type { BookInfo, DownloadPlan, JobRecord, LibraryItem } from "./types";
 import { BookHero } from "./components/BookHero";
 import { JobStatus } from "./components/JobStatus";
+import { Layout } from "./components/Layout";
 import { LibraryTable } from "./components/LibraryTable";
-import { parseBookId, getPageCount, getPageForBook } from "./utils";
+import { NovelSearch } from "./components/NovelSearch";
+import { getPageCount, getPageForBook, parseBookId } from "./utils";
 
 const LIBRARY_PAGE_SIZE = 20;
 
 type BusyAction = "resolve" | "download" | "translate" | "library" | undefined;
-type ViewMode = "admin" | "download" | "library";
+type ViewMode = "download" | "library";
 
-export function App(): React.JSX.Element {
-  const [input, setInput] = useState("");
-  const [plan, setPlan] = useState<DownloadPlan>();
-  const [downloadJob, setDownloadJob] = useState<JobRecord>();
-  const [translateJob, setTranslateJob] = useState<JobRecord>();
-  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
-  const [libraryPage, setLibraryPage] = useState(1);
-  const [libraryQuery, setLibraryQuery] = useState("");
-  const [focusedBookId, setFocusedBookId] = useState("");
-  const [adminOverview, setAdminOverview] = useState<AdminOverview>();
-  const [viewMode, setViewMode] = useState<ViewMode>("download");
-  const [busy, setBusy] = useState<BusyAction>();
-  const [error, setError] = useState("");
+export function App(): React.JSX.Element
+{
+    const [input, setInput] = useState("");
+    const [plan, setPlan] = useState<DownloadPlan>();
+    const [downloadJob, setDownloadJob] = useState<JobRecord>();
+    const [translateJob, setTranslateJob] = useState<JobRecord>();
+    const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
+    const [libraryPage, setLibraryPage] = useState(1);
+    const [libraryQuery, setLibraryQuery] = useState("");
+    const [focusedBookId, setFocusedBookId] = useState("");
+    const [viewMode, setViewMode] = useState<ViewMode>("download");
+    const [busy, setBusy] = useState<BusyAction>();
+    const [error, setError] = useState("");
 
-  // Load library on mount
-  useEffect(() => {
-    void refreshLibrary("");
-  }, []);
+    useEffect(() =>
+    {
+        void refreshLibrary("");
+    }, []);
 
-  // Ensure library page is valid
-  useEffect(() => {
-    const maxPage = getPageCount(libraryItems.length, LIBRARY_PAGE_SIZE);
-    if (libraryPage > maxPage) {
-      setLibraryPage(maxPage);
-    }
-  }, [libraryItems.length, libraryPage]);
+    useEffect(() =>
+    {
+        const maxPage = getPageCount(libraryItems.length, LIBRARY_PAGE_SIZE);
 
-  // Subscribe to download job updates
-  useEffect(() => {
-    if (!downloadJob) return;
-    return subscribeJob(downloadJob.id, (nextJob) => {
-      setDownloadJob(nextJob);
-      if (nextJob.status === "completed") {
-        void focusDownloadedBook(nextJob);
-      }
-    });
-  }, [downloadJob?.id]);
-
-  // Subscribe to translate job updates
-  useEffect(() => {
-    if (!translateJob) return;
-    return subscribeJob(translateJob.id, (nextJob) => {
-      setTranslateJob(nextJob);
-      if (nextJob.status === "completed") {
-        void focusTranslatedBook(nextJob);
-      }
-    });
-  }, [translateJob?.id]);
-
-  useEffect(() => {
-    if (viewMode !== "admin") {
-      return;
-    }
-
-    void refreshAdmin();
-    const timer = window.setInterval(() => {
-      void refreshAdmin();
-    }, 5000);
-
-    return () => window.clearInterval(timer);
-  }, [viewMode]);
-
-  const book = useMemo(() => plan?.book ?? downloadJob?.book, [downloadJob?.book, plan?.book]);
-  const pageCount = getPageCount(libraryItems.length, LIBRARY_PAGE_SIZE);
-  const safeLibraryPage = Math.min(libraryPage, pageCount);
-  const pagedLibraryItems = libraryItems.slice(
-    (safeLibraryPage - 1) * LIBRARY_PAGE_SIZE,
-    safeLibraryPage * LIBRARY_PAGE_SIZE
-  );
-
-  const runAction = async (action: BusyAction, callback: () => Promise<void>) => {
-    try {
-      setBusy(action);
-      setError("");
-      await callback();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(undefined);
-    }
-  };
-
-  const handleResolve = () => {
-    void runAction("resolve", async () => {
-      const existingId = parseBookId(input);
-      if (existingId) {
-        const found = await getLibraryByBookId(existingId);
-        if (found.items.length > 0) {
-          await focusLibraryBook(existingId);
-          setPlan(undefined);
-          setDownloadJob(undefined);
-          setTranslateJob(undefined);
-          return;
+        if (libraryPage > maxPage)
+        {
+            setLibraryPage(maxPage);
         }
-      }
+    }, [libraryItems.length, libraryPage]);
 
-      const nextPlan = await resolveBook(input);
-      setPlan(nextPlan);
-      setDownloadJob(undefined);
-      setTranslateJob(undefined);
-      setFocusedBookId("");
-      setViewMode("download");
-    });
-  };
+    useEffect(() =>
+    {
+        if (!downloadJob)
+        {
+            return;
+        }
 
-  const handleDownload = () => {
-    void runAction("download", async () => {
-      setTranslateJob(undefined);
-      setDownloadJob(await startDownload(input));
-    });
-  };
+        return subscribeJob(downloadJob.id, (nextJob) =>
+        {
+            setDownloadJob(nextJob);
 
-  const handleTranslate = () => {
-    if (!downloadJob) return;
-    void runAction("translate", async () => {
-      setTranslateJob(await startTranslate(downloadJob.id));
-    });
-  };
+            if (nextJob.status === "completed")
+            {
+                void focusDownloadedBook(nextJob);
+            }
+        });
+    }, [downloadJob?.id]);
 
-  const handleCancelDownload = () => {
-    if (!downloadJob) return;
-    void runAction("download", async () => {
-      setDownloadJob(await cancelJob(downloadJob.id));
-    });
-  };
+    useEffect(() =>
+    {
+        if (!translateJob)
+        {
+            return;
+        }
 
-  const handleRetryDownload = () => {
-    if (!downloadJob) return;
-    void runAction("download", async () => {
-      setDownloadJob(await retryJob(downloadJob.id));
-    });
-  };
+        return subscribeJob(translateJob.id, (nextJob) =>
+        {
+            setTranslateJob(nextJob);
 
-  const handleCancelTranslate = () => {
-    if (!translateJob) return;
-    void runAction("translate", async () => {
-      setTranslateJob(await cancelJob(translateJob.id));
-    });
-  };
+            if (nextJob.status === "completed")
+            {
+                void focusTranslatedBook(nextJob);
+            }
+        });
+    }, [translateJob?.id]);
 
-  const handleRetryTranslate = () => {
-    if (!translateJob) return;
-    void runAction("translate", async () => {
-      setTranslateJob(await retryJob(translateJob.id));
-    });
-  };
+    const book = useMemo(() => plan?.book ?? downloadJob?.book, [downloadJob?.book, plan?.book]);
+    const pageCount = getPageCount(libraryItems.length, LIBRARY_PAGE_SIZE);
+    const safeLibraryPage = Math.min(libraryPage, pageCount);
+    const pagedLibraryItems = libraryItems.slice(
+        (safeLibraryPage - 1) * LIBRARY_PAGE_SIZE,
+        safeLibraryPage * LIBRARY_PAGE_SIZE
+    );
 
-  const handleLibraryTranslate = (bookId: string) => {
-    void runAction("translate", async () => {
-      setFocusedBookId(bookId);
-      setTranslateJob(await startLibraryTranslate(bookId));
-    });
-  };
+    const runAction = async (action: BusyAction, callback: () => Promise<void>): Promise<void> =>
+    {
+        try
+        {
+            setBusy(action);
+            setError("");
+            await callback();
+        }
+        catch (caught)
+        {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        }
+        finally
+        {
+            setBusy(undefined);
+        }
+    };
 
-  const refreshLibrary = async (query = libraryQuery) => {
-    const data = await getLibrary(query);
-    setLibraryItems(data.items);
-    return data.items;
-  };
+    const handleResolve = () =>
+    {
+        void runAction("resolve", async () =>
+        {
+            const existingId = parseBookId(input);
 
-  const refreshAdmin = async () => {
-    const data = await getAdminOverview();
-    setAdminOverview(data);
-    return data;
-  };
+            if (existingId)
+            {
+                const found = await getLibraryByBookId(existingId);
 
-  const focusLibraryBook = async (bookId: string) => {
-    const items = await refreshLibrary("");
-    setLibraryQuery("");
-    setFocusedBookId(bookId);
-    setLibraryPage(getPageForBook(items, bookId, LIBRARY_PAGE_SIZE));
-    setViewMode("library");
-  };
+                if (found.items.length > 0)
+                {
+                    await focusLibraryBook(existingId);
+                    setPlan(undefined);
+                    setDownloadJob(undefined);
+                    setTranslateJob(undefined);
+                    return;
+                }
+            }
 
-  const focusDownloadedBook = async (job: JobRecord) => {
-    const bookId = job.book?.bookId ?? parseBookId(input);
-    if (!bookId) {
-      await refreshLibrary("");
-      setLibraryQuery("");
-      setLibraryPage(1);
-      setViewMode("library");
-      return;
-    }
-    await focusLibraryBook(bookId);
-  };
+            const nextPlan = await resolveBook(input);
+            setPlan(nextPlan);
+            setDownloadJob(undefined);
+            setTranslateJob(undefined);
+            setFocusedBookId("");
+            setViewMode("download");
+        });
+    };
 
-  const focusTranslatedBook = async (job: JobRecord) => {
-    const bookId = job.book?.bookId ?? focusedBookId;
-    if (bookId) {
-      await focusLibraryBook(bookId);
-      return;
-    }
-    await refreshLibrary(libraryQuery);
-  };
+    const handleDownload = () =>
+    {
+        void runAction("download", async () =>
+        {
+            setTranslateJob(undefined);
+            setDownloadJob(await startDownload(input));
+        });
+    };
 
-  const handleLibrarySearch = () => {
-    void runAction("library", async () => {
-      setFocusedBookId("");
-      setLibraryPage(1);
-      await refreshLibrary(libraryQuery);
-    });
-  };
+    const handleTranslate = () =>
+    {
+        if (!downloadJob)
+        {
+            return;
+        }
 
-  const handleClearLibrarySearch = () => {
-    void runAction("library", async () => {
-      setFocusedBookId("");
-      setLibraryQuery("");
-      setLibraryPage(1);
-      await refreshLibrary("");
-    });
-  };
+        void runAction("translate", async () =>
+        {
+            setTranslateJob(await startTranslate(downloadJob.id));
+        });
+    };
 
-  const handleOpenLibrary = () => {
-    setFocusedBookId("");
-    setLibraryQuery("");
-    setLibraryPage(1);
-    setViewMode("library");
-    void refreshLibrary("");
-  };
+    const handleCancelDownload = () =>
+    {
+        if (!downloadJob)
+        {
+            return;
+        }
 
-  const handleOpenAdmin = () => {
-    setViewMode("admin");
-    void refreshAdmin();
-  };
+        void runAction("download", async () =>
+        {
+            setDownloadJob(await cancelJob(downloadJob.id));
+        });
+    };
 
-  return (
-    <Layout activeTab={viewMode} onTabChange={(tab) => {
-      if (tab === "library") {
-        handleOpenLibrary();
-        return;
-      }
+    const handleRetryDownload = () =>
+    {
+        if (!downloadJob)
+        {
+            return;
+        }
 
-      if (tab === "admin") {
-        handleOpenAdmin();
-        return;
-      }
+        void runAction("download", async () =>
+        {
+            setDownloadJob(await retryJob(downloadJob.id));
+        });
+    };
 
-      setViewMode("download");
-    }}>
-      {viewMode === "download" ? (
-        <div className="max-w-4xl mx-auto space-y-8">
-          <section className="text-center space-y-4 mb-12">
-            <h2 className="text-4xl md:text-6xl font-black tracking-tight title-serif">
-              Tải truyện <span className="text-primary italic">Fanqie</span>
-            </h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              Hỗ trợ tải bản gốc tiếng Trung, tự động dịch sang tiếng Việt và lưu trữ vào thư viện cá nhân.
-            </p>
-          </section>
+    const handleCancelTranslate = () =>
+    {
+        if (!translateJob)
+        {
+            return;
+        }
 
-          <NovelSearch
-            input={input}
-            setInput={setInput}
-            onResolve={handleResolve}
-            busy={busy === "resolve"}
-            error={error}
-          />
+        void runAction("translate", async () =>
+        {
+            setTranslateJob(await cancelJob(translateJob.id));
+        });
+    };
 
-          {book && (
-            <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-              <BookHero book={book} />
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {(downloadJob || (!downloadJob && !busy)) && (
-                  <JobStatus
-                    type="download"
-                    title="Tải bản tiếng Trung"
-                    job={downloadJob || {
-                      id: "pending",
-                      status: "queued",
-                      kind: "download",
-                      progress: { current: 0, total: book.chapterCount, percent: 0, message: "Sẵn sàng tải" },
-                      files: {}
-                    } as JobRecord}
-                    onAction={handleDownload}
-                    onCancel={handleCancelDownload}
-                    onRetry={handleRetryDownload}
-                    downloadLabel="Tải truyện"
-                    downloadOptions={downloadJob?.status === "completed"
-                      ? [
-                          {
-                            format: "txt" as const,
-                            url: jobFileUrl(downloadJob.id, "original", "txt")
-                          }
-                        ]
-                      : undefined}
-                  />
-                )}
+    const handleRetryTranslate = () =>
+    {
+        if (!translateJob)
+        {
+            return;
+        }
 
-                {translateJob && (
-                  <JobStatus
-                    type="translate"
-                    title="Dịch sang tiếng Việt"
-                    job={translateJob}
-                    onCancel={handleCancelTranslate}
-                    onRetry={handleRetryTranslate}
-                    downloadLabel="Tải truyện"
-                    downloadOptions={translateJob.status === "completed"
-                      ? [
-                          {
-                            format: "txt",
-                            url: jobFileUrl(translateJob.id, "translated", "txt")
-                          }
-                        ]
-                      : undefined}
-                  />
-                )}
+        void runAction("translate", async () =>
+        {
+            setTranslateJob(await retryJob(translateJob.id));
+        });
+    };
 
-                {downloadJob?.status === "completed" && !translateJob && (
-                  <div className="flex flex-col justify-center items-center p-8 border-2 border-dashed rounded-xl bg-secondary/20">
-                    <p className="text-sm text-muted-foreground mb-4">Bạn có muốn dịch bộ truyện này?</p>
-                    <button
-                      onClick={handleTranslate}
-                      disabled={busy === "translate"}
-                      className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-accent text-accent-foreground font-bold hover:opacity-90 transition-all shadow-lg shadow-accent/20"
-                    >
-                      Bắt đầu dịch ngay
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+    const handleLibraryTranslate = (bookId: string) =>
+    {
+        void runAction("translate", async () =>
+        {
+            setFocusedBookId(bookId);
+            setTranslateJob(await startLibraryTranslate(bookId));
+        });
+    };
 
-          {!book && !busy && (
-            <div className="py-20 text-center opacity-40 grayscale group hover:grayscale-0 hover:opacity-100 transition-all">
-              <div className="inline-flex h-20 w-20 items-center justify-center rounded-full bg-secondary mb-6 group-hover:scale-110 transition-transform">
-                <Search className="h-10 w-10 text-muted-foreground" />
-              </div>
-              <p className="text-muted-foreground max-w-sm mx-auto">
-                Nhập link hoặc ID truyện để bắt đầu quá trình tải và xử lý.
-              </p>
-            </div>
-          )}
-        </div>
-      ) : viewMode === "library" ? (
-        <div className="animate-in fade-in duration-500">
-          <LibraryTable
-            items={pagedLibraryItems}
-            query={libraryQuery}
-            setQuery={setLibraryQuery}
-            onSearch={handleLibrarySearch}
-            onClear={handleClearLibrarySearch}
-            page={safeLibraryPage}
-            pageCount={pageCount}
-            onPageChange={setLibraryPage}
-            onTranslate={handleLibraryTranslate}
-            busy={busy === "translate"}
-            focusedBookId={focusedBookId}
-            totalItems={libraryItems.length}
-            libraryFileUrl={libraryFileUrl}
-          />
-          
-          {translateJob && (translateJob.status as string) !== "completed" && (
-            <div className="fixed bottom-8 right-8 w-80 shadow-2xl animate-in slide-in-from-right-8 z-50">
-              <JobStatus
-                type="translate"
-                title="Đang dịch truyện"
-                job={translateJob}
-                onCancel={handleCancelTranslate}
-                onRetry={handleRetryTranslate}
-                downloadLabel="Tải truyện"
-                downloadOptions={translateJob.status === "completed"
-                  ? [
-                      {
-                        format: "txt",
-                        url: jobFileUrl(translateJob.id, "translated", "txt")
-                      }
-                    ]
-                  : undefined}
-              />
-            </div>
-          )}
-        </div>
-      ) : (
-        <AdminDashboard
-          busy={busy !== undefined}
-          overview={adminOverview}
-          onRefresh={() => {
-            void refreshAdmin();
-          }}
-        />
-      )}
-    </Layout>
-  );
+    const refreshLibrary = async (query = libraryQuery): Promise<LibraryItem[]> =>
+    {
+        const data = await getLibrary(query);
+        setLibraryItems(data.items);
+        return data.items;
+    };
+
+    const focusLibraryBook = async (bookId: string): Promise<void> =>
+    {
+        const items = await refreshLibrary("");
+        setLibraryQuery("");
+        setFocusedBookId(bookId);
+        setLibraryPage(getPageForBook(items, bookId, LIBRARY_PAGE_SIZE));
+        setViewMode("library");
+    };
+
+    const focusDownloadedBook = async (job: JobRecord): Promise<void> =>
+    {
+        const bookId = job.book?.bookId ?? parseBookId(input);
+
+        if (!bookId)
+        {
+            await refreshLibrary("");
+            setLibraryQuery("");
+            setLibraryPage(1);
+            setViewMode("library");
+            return;
+        }
+
+        await focusLibraryBook(bookId);
+    };
+
+    const focusTranslatedBook = async (job: JobRecord): Promise<void> =>
+    {
+        const bookId = job.book?.bookId ?? focusedBookId;
+
+        if (bookId)
+        {
+            await focusLibraryBook(bookId);
+            return;
+        }
+
+        await refreshLibrary(libraryQuery);
+    };
+
+    const handleLibrarySearch = () =>
+    {
+        void runAction("library", async () =>
+        {
+            setFocusedBookId("");
+            setLibraryPage(1);
+            await refreshLibrary(libraryQuery);
+        });
+    };
+
+    const handleClearLibrarySearch = () =>
+    {
+        void runAction("library", async () =>
+        {
+            setFocusedBookId("");
+            setLibraryQuery("");
+            setLibraryPage(1);
+            await refreshLibrary("");
+        });
+    };
+
+    const handleOpenLibrary = () =>
+    {
+        setFocusedBookId("");
+        setLibraryQuery("");
+        setLibraryPage(1);
+        setViewMode("library");
+        void refreshLibrary("");
+    };
+
+    return (
+        <Layout
+            activeTab={viewMode}
+            onTabChange={(tab) =>
+            {
+                if (tab === "library")
+                {
+                    handleOpenLibrary();
+                    return;
+                }
+
+                setViewMode("download");
+            }}
+        >
+            {viewMode === "download" ? (
+                <div className="mx-auto max-w-4xl space-y-8">
+                    <section className="mb-12 space-y-4 text-center">
+                        <h2 className="title-serif text-4xl font-black tracking-tight md:text-6xl">
+                            Tải truyện <span className="italic text-primary">Fanqie</span>
+                        </h2>
+                        <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
+                            Hỗ trợ tải bản gốc tiếng Trung, tự động dịch sang tiếng Việt và lưu trữ vào thư viện cá nhân.
+                        </p>
+                    </section>
+
+                    <NovelSearch
+                        input={input}
+                        setInput={setInput}
+                        onResolve={handleResolve}
+                        busy={busy === "resolve"}
+                        error={error}
+                    />
+
+                    {book && (
+                        <div className="animate-in slide-in-from-bottom-4 space-y-6 duration-500">
+                            <BookHero book={book} />
+
+                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                                {(downloadJob || (!downloadJob && !busy)) && (
+                                    <JobStatus
+                                        type="download"
+                                        title="Tải bản tiếng Trung"
+                                        job={downloadJob || {
+                                            id: "pending",
+                                            status: "queued",
+                                            kind: "download",
+                                            progress: {
+                                                current: 0,
+                                                total: book.chapterCount,
+                                                percent: 0,
+                                                message: "Sẵn sàng tải"
+                                            },
+                                            files: {}
+                                        } as JobRecord}
+                                        onAction={handleDownload}
+                                        onCancel={handleCancelDownload}
+                                        onRetry={handleRetryDownload}
+                                        downloadLabel="Tải truyện"
+                                        downloadOptions={downloadJob?.status === "completed"
+                                            ? [
+                                                {
+                                                    format: "txt" as const,
+                                                    url: jobFileUrl(downloadJob.id, "original", "txt")
+                                                }
+                                            ]
+                                            : undefined}
+                                    />
+                                )}
+
+                                {translateJob && (
+                                    <JobStatus
+                                        type="translate"
+                                        title="Dịch sang tiếng Việt"
+                                        job={translateJob}
+                                        onCancel={handleCancelTranslate}
+                                        onRetry={handleRetryTranslate}
+                                        downloadLabel="Tải truyện"
+                                        downloadOptions={translateJob.status === "completed"
+                                            ? [
+                                                {
+                                                    format: "txt",
+                                                    url: jobFileUrl(translateJob.id, "translated", "txt")
+                                                }
+                                            ]
+                                            : undefined}
+                                    />
+                                )}
+
+                                {downloadJob?.status === "completed" && !translateJob && (
+                                    <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed bg-secondary/20 p-8">
+                                        <p className="mb-4 text-sm text-muted-foreground">
+                                            Bạn có muốn dịch bộ truyện này?
+                                        </p>
+                                        <button
+                                            onClick={handleTranslate}
+                                            disabled={busy === "translate"}
+                                            className="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 font-bold text-accent-foreground shadow-lg shadow-accent/20 transition-all hover:opacity-90"
+                                        >
+                                            Bắt đầu dịch ngay
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {!book && !busy && (
+                        <div className="group py-20 text-center opacity-40 grayscale transition-all hover:opacity-100 hover:grayscale-0">
+                            <div className="mb-6 inline-flex h-20 w-20 items-center justify-center rounded-full bg-secondary transition-transform group-hover:scale-110">
+                                <Search className="h-10 w-10 text-muted-foreground" />
+                            </div>
+                            <p className="mx-auto max-w-sm text-muted-foreground">
+                                Nhập link hoặc ID truyện để bắt đầu quá trình tải và xử lý.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="animate-in fade-in duration-500">
+                    <LibraryTable
+                        items={pagedLibraryItems}
+                        query={libraryQuery}
+                        setQuery={setLibraryQuery}
+                        onSearch={handleLibrarySearch}
+                        onClear={handleClearLibrarySearch}
+                        page={safeLibraryPage}
+                        pageCount={pageCount}
+                        onPageChange={setLibraryPage}
+                        onTranslate={handleLibraryTranslate}
+                        busy={busy === "translate"}
+                        focusedBookId={focusedBookId}
+                        totalItems={libraryItems.length}
+                        libraryFileUrl={libraryFileUrl}
+                    />
+
+                    {translateJob && (
+                        <div className="fixed bottom-8 right-8 z-50 w-80 animate-in slide-in-from-right-8 shadow-2xl">
+                            <JobStatus
+                                type="translate"
+                                title="Đang dịch truyện"
+                                job={translateJob}
+                                onCancel={handleCancelTranslate}
+                                onRetry={handleRetryTranslate}
+                                downloadLabel="Tải truyện"
+                                downloadOptions={undefined}
+                            />
+                        </div>
+                    )}
+                </div>
+            )}
+        </Layout>
+    );
 }

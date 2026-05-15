@@ -190,9 +190,9 @@ Có thể bắt đầu bằng:
 - Cron gửi log/error qua Telegram/Discord/email.
 - Node exporter + Prometheus/Grafana khi có thời gian.
 
-## Dashboard admin trong app
+## Dashboard admin riêng
 
-Nên thêm tab admin cho:
+Nên tách dashboard admin sang một cổng riêng cho:
 
 - Số job queued/running/failed.
 - Danh sách job mới nhất.
@@ -201,7 +201,7 @@ Nên thêm tab admin cho:
 - Version app và version legacy downloader.
 - Trạng thái DB/storage/legacy.
 
-Tab admin giúp vận hành khi chưa có Grafana.
+Dashboard admin riêng giúp vận hành khi chưa có Grafana mà không làm lộ tab quản trị trong app người dùng.
 
 ## CI khuyến nghị
 

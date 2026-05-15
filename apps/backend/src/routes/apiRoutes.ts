@@ -147,7 +147,8 @@ export async function registerApiRoutes(
     config: AppConfig,
     spamGuard: SpamGuardService,
     auditLogService: AuditLogService,
-    quotaService: QuotaService
+    quotaService: QuotaService,
+    adminPortalToken: string
 ): Promise<void>
 {
     app.get("/api/health", async () => ({
@@ -628,8 +629,15 @@ export async function registerApiRoutes(
         }
     );
 
-    app.get("/api/admin/overview", async () =>
+    app.get("/api/admin/overview", async (request, reply) =>
     {
+        if (!isAdminPortalRequest(request, adminPortalToken))
+        {
+            return reply.code(403).send({
+                error: "Không được phép"
+            });
+        }
+
         const recentJobs = database.listRecentJobs(12);
         const jobCounts = database.getJobCounts();
         const storage = await getStorageSummaryAsync(config.dataDir);
@@ -716,6 +724,18 @@ function getUserAgent(request: FastifyRequest): string | undefined
     }
 
     return undefined;
+}
+
+function isAdminPortalRequest(request: FastifyRequest, expectedToken: string): boolean
+{
+    const headerToken = request.headers["x-admin-portal"];
+
+    if (typeof headerToken !== "string" || !headerToken.trim())
+    {
+        return false;
+    }
+
+    return headerToken.trim() === expectedToken;
 }
 
 function buildFriendlyDownloadName(title: string | undefined, kind: "original" | "translated", format: DownloadFormat): string

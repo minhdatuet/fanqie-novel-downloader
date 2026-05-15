@@ -9,7 +9,7 @@ Ngày cập nhật: 2026-05-15.
 - Phase 2 tập trung vào SQLite WAL cho `books`, `book_files`, `jobs`, `job_events`, `audit_logs`.
 - Phase 3 tập trung vào queue bền vững và worker có thể khôi phục sau restart.
 - Phase 4 chuẩn hóa layout lưu trữ, checksum và manifest.
-- Phase 5 tập trung vào dashboard quản trị và quota vận hành theo IP.
+- Phase 5 tập trung vào dashboard quản trị riêng trên cổng admin và quota vận hành theo IP.
 
 ## Phase 0
 
@@ -79,12 +79,12 @@ Ngày cập nhật: 2026-05-15.
 
 Đã hoàn tất.
 
-- [x] Có dashboard quản trị trong frontend.
+- [x] Có dashboard quản trị riêng trên cổng admin.
 - [x] Có endpoint tổng hợp `/api/admin/overview`.
 - [x] Hiển thị số lượng truyện, file, job và audit log.
 - [x] Hiển thị hàng đợi gần đây và dung lượng lưu trữ.
 - [x] Có quota tạo job theo IP trong 24 giờ.
-- [x] Có hiển thị quota đang dùng trong dashboard.
+- [x] Có hiển thị quota đang dùng trong dashboard admin.
 
 ## Kiểm tra đã làm
 

@@ -149,6 +149,7 @@ Port listen nội bộ trên server:
 
 ```text
 0.0.0.0:8787       node backend
+127.0.0.1:10052    admin portal
 127.0.0.1:18424    legacy downloader
 0.0.0.0:22         sshd
 ```
@@ -160,6 +161,7 @@ Kiểm tra từ ngoài:
 | `93.127.134.70:10049` | SSH open |
 | `http://93.127.134.70:10051/` | HTTP 200, frontend |
 | `http://93.127.134.70:10051/api/health` | HTTP 200, `{"ok":true}` |
+| `http://127.0.0.1:10052/` | HTTP 200, admin portal |
 | `http://93.127.134.70:8787/` | timeout từ ngoài |
 | `http://93.127.134.70:18424/api/status` | timeout từ ngoài |
 | `http://93.127.134.70/` | HTTP 404 |
@@ -453,4 +455,3 @@ Thứ tự thực tế cho server này:
 7. Thêm `/readyz` kiểm tra storage và legacy.
 8. Thêm persistent DB/queue theo roadmap.
 9. Chạy load test trước khi mời nhiều user.
-

@@ -17,6 +17,8 @@ const DEFAULT_DAILY_JOB_QUOTA = 20;
 
 export interface AppConfig
 {
+    adminHost: string;
+    adminPort: number;
     dataDir: string;
     fanqieApiEndpoints: string[];
     dailyJobQuota: number;
@@ -116,6 +118,8 @@ export function loadConfig(): AppConfig
     const legacyBridgeRequested = readBoolean("LEGACY_BRIDGE", true);
 
     return {
+        adminHost: process.env.ADMIN_HOST ?? "127.0.0.1",
+        adminPort: readNumber("ADMIN_PORT", 10052),
         dataDir: resolveFromRoot(process.env.DATA_DIR ?? "./storage"),
         fanqieApiEndpoints: readEndpoints(),
         dailyJobQuota: Math.max(1, readNumber("DAILY_JOB_QUOTA", DEFAULT_DAILY_JOB_QUOTA)),
