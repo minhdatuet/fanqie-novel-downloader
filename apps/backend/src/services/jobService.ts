@@ -388,21 +388,11 @@ export class JobService
             });
 
             this.throwIfCancelled(jobId);
-            this.update(jobId, {
-                progress: progress(chapters.length, chapters.length, "Đang ghi file và cập nhật thư viện")
-            });
             const originalPath = await this.artifacts.saveDownloadedBookAsync(
                 jobId,
                 plan.book,
                 chapters,
-                translatedBook,
-                (message) =>
-                {
-                    this.throwIfCancelled(jobId);
-                    this.update(jobId, {
-                        progress: progress(chapters.length, chapters.length, message)
-                    });
-                }
+                translatedBook
             );
             this.library.invalidate();
 
@@ -488,21 +478,11 @@ export class JobService
                         }
 
                         this.throwIfCancelled(jobId);
-                        this.update(jobId, {
-                            progress: progress(chapters.length, chapters.length, "Đang ghi file và cập nhật thư viện")
-                        });
                         const savedOriginalPath = await this.artifacts.saveDownloadedBookAsync(
                             jobId,
                             plan.book,
                             chapters,
-                            translatedBook,
-                            (message) =>
-                            {
-                                this.throwIfCancelled(jobId);
-                                this.update(jobId, {
-                                    progress: progress(chapters.length, chapters.length, message)
-                                });
-                            }
+                            translatedBook
                         );
                         this.library.invalidate();
 
@@ -604,21 +584,11 @@ export class JobService
             }
 
             this.throwIfCancelled(jobId);
-            this.update(jobId, {
-                progress: progress(chapters.length, chapters.length, "Đang ghi bản dịch và cập nhật thư viện")
-            });
             const translatedPath = await this.artifacts.saveTranslatedBookAsync(
                 jobId,
                 source,
                 translatedBook,
-                translated,
-                (message) =>
-                {
-                    this.throwIfCancelled(jobId);
-                    this.update(jobId, {
-                        progress: progress(chapters.length, chapters.length, message)
-                    });
-                }
+                translated
             );
             this.library.invalidate();
 
