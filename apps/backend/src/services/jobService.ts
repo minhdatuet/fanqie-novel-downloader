@@ -11,7 +11,7 @@ import type { AppConfig } from "../config.js";
 import type { DatabaseService } from "../infra/db/database.js";
 import type { BookInfo, DownloadFormat, DownloadPlan, JobRecord, ProgressState, StoredChapter } from "../types.js";
 import { buildEpubBuffer } from "../utils/epub.js";
-import { cleanPlainText, composeNovelText } from "../utils/text.js";
+import { cleanPlainText, composeNovelText, decodeHtmlEntities } from "../utils/text.js";
 import {
     hashFileSha256Async,
     readJsonFile,
@@ -24,6 +24,7 @@ import { FanqieService } from "./fanqieService.js";
 import { LegacyService } from "./legacyService.js";
 import { type LibraryItem, LibraryService } from "./libraryService.js";
 import type { QuotaService } from "./quotaService.js";
+import { parseStoredChaptersFromText } from "../utils/chapterParsing.js";
 import { TranslatorService } from "./translatorService.js";
 
 interface ChapterProgress
@@ -536,7 +537,7 @@ export class JobService
                             throw new Error("Đã tải xong nhưng không tìm thấy file TXT đầu ra");
                         }
 
-                        const chapters = splitTextIntoChapters(await readTextFile(originalTxt));
+                        const chapters = parseStoredChaptersFromText(await readTextFile(originalTxt));
                         if (chapters.length === 0)
                         {
                             throw new Error("Không đọc được nội dung từ file TXT đầu ra");
@@ -675,6 +676,8 @@ export class JobService
         this.throwIfCancelled(jobId);
         await writeTextFileAtomic(originalTxt, content);
         this.throwIfCancelled(jobId);
+        await this.writeChaptersJsonAsync(bookDir, chapters);
+        this.throwIfCancelled(jobId);
 
         const artifact = await this.buildArtifactAsync(originalTxt);
         const updatedAt = new Date().toISOString();
@@ -786,6 +789,8 @@ export class JobService
 
         this.throwIfCancelled(jobId);
         await writeTextFileAtomic(targetTxt, content);
+        this.throwIfCancelled(jobId);
+        await this.writeChaptersJsonAsync(baseDir, chapters);
         this.throwIfCancelled(jobId);
 
         const artifact = await this.buildArtifactAsync(targetTxt);
@@ -1029,6 +1034,13 @@ export class JobService
         return readJsonFile<BookArtifactManifest>(path).catch(() => undefined);
     }
 
+    private async writeChaptersJsonAsync(baseDir: string, chapters: readonly StoredChapter[]): Promise<void>
+    {
+        const chaptersPath = resolve(baseDir, "chapters.json");
+
+        await writeJsonFile(chaptersPath, chapters).catch(() => undefined);
+    }
+
     private createJob(
         kind: "download" | "translate",
         book?: JobRecord["book"],
@@ -1171,7 +1183,7 @@ export class JobService
         if (source.files.originalTxt)
         {
             const raw = await readTextFile(source.files.originalTxt);
-            return splitTextIntoChapters(raw);
+            return parseStoredChaptersFromText(raw);
         }
 
         if (source.files.originalEpub)
@@ -1194,6 +1206,7 @@ export class JobService
         const baseName = normalizeArtifactBaseName(params.sourcePath);
         const baseDir = dirname(params.sourcePath);
         const targetPath = resolve(baseDir, getArtifactFileName(baseName, params.translated, params.format));
+        const chaptersJsonPath = resolve(baseDir, "chapters.json");
 
         if (params.sourcePath === targetPath || existsSync(targetPath))
         {
@@ -1201,7 +1214,7 @@ export class JobService
         }
 
         const [chapters, book] = await Promise.all([
-            loadArtifactChaptersAsync(params.sourcePath, params.chaptersJson),
+            loadArtifactChaptersAsync(params.sourcePath, params.chaptersJson ?? chaptersJsonPath),
             loadArtifactBookAsync(params.sourcePath, params.metaJson, params.book)
         ]);
         const resolvedBook = book ?? params.book;
@@ -1487,7 +1500,7 @@ async function loadArtifactChaptersAsync(
     if (sourcePath.toLowerCase().endsWith(".txt"))
     {
         const raw = await readTextFile(sourcePath);
-        return splitTextIntoChapters(raw);
+        return parseStoredChaptersFromText(raw);
     }
 
     if (sourcePath.toLowerCase().endsWith(".epub"))
@@ -1593,8 +1606,15 @@ function getArtifactFileName(baseName: string, translated: boolean, format: Down
 
 function extractChapterTitleFromHtml(html: string): string | undefined
 {
-    return html.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim()
-        ?? html.match(/<h1[^>]*>([^<]+)<\/h1>/i)?.[1]?.trim();
+    const title = html.match(/<title>([\s\S]*?)<\/title>/i)?.[1]
+        ?? html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1];
+
+    if (!title)
+    {
+        return undefined;
+    }
+
+    return decodeHtmlEntities(title.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()) || undefined;
 }
 
 function progress(current: number, total: number, message: string): ProgressState
@@ -1608,37 +1628,6 @@ function progress(current: number, total: number, message: string): ProgressStat
         percent: Math.round((safeCurrent / safeTotal) * 100),
         total: safeTotal
     };
-}
-
-function splitTextIntoChapters(content: string): StoredChapter[]
-{
-    const headerSeparator = "=".repeat(40);
-    const chapterSeparator = "-".repeat(40);
-    const bodyStart = content.indexOf(headerSeparator);
-    const body = bodyStart >= 0 ? content.slice(bodyStart + headerSeparator.length) : content;
-    const blocks = body
-        .split(chapterSeparator)
-        .map((block) => block.trim())
-        .filter(Boolean);
-    const sourceBlocks = blocks.length > 1 ? blocks : body.split(/\n(?=第.{1,12}[章节回])/g);
-
-    return sourceBlocks
-        .map((block, index) =>
-        {
-            const lines = block
-                .split(/\r?\n/g)
-                .map((line) => line.trim())
-                .filter(Boolean);
-            const title = lines[0] || `Chương ${index + 1}`;
-            const bodyText = lines.slice(1).join("\n\n") || block;
-
-            return {
-                content: bodyText,
-                id: String(index + 1),
-                title
-            };
-        })
-        .filter((chapter) => chapter.content.trim().length > 0);
 }
 
 function inferFormatFromFiles(files: JobRecord["files"]): DownloadFormat
