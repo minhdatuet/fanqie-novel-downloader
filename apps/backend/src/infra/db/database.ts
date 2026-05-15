@@ -451,12 +451,6 @@ export class DatabaseService
         return this.mapLibraryItem(book, this.listBookFiles(book.id));
     }
 
-    public hasAnyBooks(): boolean
-    {
-        const row = this.db.prepare("SELECT 1 FROM books LIMIT 1").get();
-        return Boolean(row);
-    }
-
     public getLibraryCount(): number
     {
         const row = this.db.prepare("SELECT COUNT(*) AS count FROM books").get() as { count: number } | undefined;
@@ -711,14 +705,6 @@ export class DatabaseService
     {
         const row = this.db.prepare("SELECT COUNT(*) AS count FROM audit_logs").get() as { count: number } | undefined;
         return row?.count ?? 0;
-    }
-
-    public seedLibrarySnapshot(items: readonly LibraryItem[]): void
-    {
-        for (const item of items)
-        {
-            this.upsertLibraryItem(item);
-        }
     }
 
     private normalizeFileInput(bookId: string, kind: "original" | "translated", path: string): DbFileInput

@@ -139,46 +139,6 @@ export class LibraryService
         this.cache = undefined;
     }
 
-    /**
-     * Ghi lại metadata đã chuẩn hóa của thư viện vào storage riêng.
-     * Việc này chỉ chạy một lần để đồng bộ các truyện cũ sau khi nâng cấp.
-     *
-     * @returns Số truyện đã được ghi lại metadata.
-     */
-    public async migrateBookMetaAsync(): Promise<number>
-    {
-        const markerPath = resolve(this.config.dataDir, "cache", "book-meta-migration.json");
-
-        if (existsSync(markerPath) && (!this.database || this.database.hasAnyBooks()))
-        {
-            return 0;
-        }
-
-        const items = this.database ? await this.scan() : await this.list();
-        let migratedCount = 0;
-
-        for (const item of items)
-        {
-            const path = resolve(this.config.dataDir, "book-meta", `${item.bookId}.json`);
-            await writeJsonFile(path, {
-                book: this.toBookInfo(item)
-            }).catch(() => undefined);
-            migratedCount += 1;
-        }
-
-        if (this.database)
-        {
-            this.database.seedLibrarySnapshot(items);
-        }
-
-        await writeJsonFile(markerPath, {
-            completedAt: new Date().toISOString(),
-            migratedCount
-        }).catch(() => undefined);
-
-        this.invalidate();
-        return migratedCount;
-    }
 
     private async loadItems(): Promise<LibraryItem[]>
     {
