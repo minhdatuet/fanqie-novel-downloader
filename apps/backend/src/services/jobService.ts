@@ -527,17 +527,17 @@ export class JobService
                     if (current.state === "done")
                     {
                         this.throwIfCancelled(jobId);
-                        const originalTxt = await this.legacy.findOutputTxt(
+                        const originalPath = await this.legacy.findOutputTxt(
                             current.book_id,
                             plan.book.title
                         );
 
-                        if (!originalTxt)
+                        if (!originalPath)
                         {
                             throw new Error("Đã tải xong nhưng không tìm thấy file TXT đầu ra");
                         }
 
-                        const chapters = parseStoredChaptersFromText(await readTextFile(originalTxt));
+                        const chapters = await loadArtifactChaptersAsync(originalPath);
                         if (chapters.length === 0)
                         {
                             throw new Error("Không đọc được nội dung từ file TXT đầu ra");

@@ -160,13 +160,13 @@ export class LegacyService
             return undefined;
         }
 
-        const files = await findTextFiles(saveDir);
+        const files = await findNovelFiles(saveDir);
         const normalizedTitle = normalize(title ?? "");
         const normalizedBookId = normalize(bookId);
         const candidates = files.filter((file) =>
         {
             const text = normalize(file.path);
-            const isTranslated = text.includes("_vi.txt") || text.includes(".vi.txt");
+            const isTranslated = text.includes("_vi.") || text.includes(".vi.");
 
             if (isTranslated)
             {
@@ -392,7 +392,7 @@ function mapLegacyStateMessage(state: LegacyJob["state"]): string
     }
 }
 
-async function findTextFiles(dir: string): Promise<LocatedTextFile[]>
+async function findNovelFiles(dir: string): Promise<LocatedTextFile[]>
 {
     const out: LocatedTextFile[] = [];
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -403,11 +403,11 @@ async function findTextFiles(dir: string): Promise<LocatedTextFile[]>
 
         if (entry.isDirectory())
         {
-            out.push(...await findTextFiles(path));
+            out.push(...await findNovelFiles(path));
             continue;
         }
 
-        if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".txt"))
+        if (!entry.isFile() || !/\.(txt|epub)$/i.test(entry.name))
         {
             continue;
         }
