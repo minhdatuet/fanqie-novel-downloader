@@ -181,9 +181,14 @@ export async function buildAppAsync(config: AppConfig = loadConfig()): Promise<F
         }));
     });
 
-    void libraryService.migrateBookMetaAsync().catch((error) =>
+    await libraryService.migrateBookMetaAsync().catch((error) =>
     {
         app.log.warn({ error }, "Không thể migrate metadata thư viện");
+    });
+
+    await jobService.refreshLibraryMetadataAsync().catch((error) =>
+    {
+        app.log.warn({ error }, "Không thể làm mới metadata thư viện sang bản dịch");
     });
 
     void jobService.warmLegacyAsync().catch((error) =>
