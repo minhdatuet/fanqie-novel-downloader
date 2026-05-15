@@ -473,6 +473,9 @@ export async function registerApiRoutes(
             try
             {
                 const path = await jobService.getJobFilePathAsync(request.params.id, kind, format);
+                const sourcePath = kind === "translated"
+                    ? job.files.translatedTxt ?? job.files.translatedEpub
+                    : job.files.originalTxt ?? job.files.originalEpub;
                 const safePath = assertInsideBase(config.dataDir, path);
                 app.log.info(
                     {
@@ -495,7 +498,7 @@ export async function registerApiRoutes(
                     userAgent: getUserAgent(request)
                 });
                 const downloadName = await jobService.getDownloadDisplayNameAsync(
-                    safePath,
+                    sourcePath ?? safePath,
                     kind,
                     format,
                     job.book
@@ -549,6 +552,9 @@ export async function registerApiRoutes(
             try
             {
                 const path = await jobService.getLibraryFilePathAsync(item, kind, format);
+                const sourcePath = kind === "translated"
+                    ? item.translatedPath
+                    : item.originalPath;
                 const safePath = assertInsideBase(config.dataDir, path);
                 app.log.info(
                     {
@@ -571,7 +577,7 @@ export async function registerApiRoutes(
                     userAgent: getUserAgent(request)
                 });
                 const downloadName = await jobService.getDownloadDisplayNameAsync(
-                    safePath,
+                    sourcePath ?? safePath,
                     kind,
                     format,
                     libraryService.toBookInfo(item)
