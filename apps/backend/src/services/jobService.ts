@@ -16,6 +16,7 @@ import {
     hashFileSha256Async,
     readJsonFile,
     readTextFile,
+    sanitizeFileName,
     writeBinaryFileAtomic,
     writeJsonFile,
     writeTextFileAtomic
@@ -330,6 +331,25 @@ export class JobService
             sourcePath,
             translated: kind === "translated"
         });
+    }
+
+    /**
+     * Lấy tên file tải xuống hiển thị cho một file gốc hoặc bản dịch.
+     * Đầu vào là đường dẫn file nguồn, loại file và định dạng mong muốn.
+     */
+    public async getDownloadDisplayNameAsync(
+        sourcePath: string,
+        kind: "original" | "translated",
+        format: DownloadFormat,
+        fallbackBook?: BookInfo
+    ): Promise<string>
+    {
+        const book = kind === "original"
+            ? await loadOriginalArtifactBookAsync(sourcePath, deriveMetaJsonPath(sourcePath), fallbackBook)
+            : await loadArtifactBookAsync(sourcePath, deriveMetaJsonPath(sourcePath), fallbackBook);
+        const safeTitle = sanitizeFileName(book?.title || fallbackBook?.title || "tomato-novel");
+        const suffix = kind === "translated" ? "_vi" : "";
+        return `${safeTitle}${suffix}.${format}`;
     }
 
     public onJobUpdate(id: string, listener: (job: JobRecord) => void): () => void

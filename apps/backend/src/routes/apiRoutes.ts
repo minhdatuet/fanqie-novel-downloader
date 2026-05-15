@@ -21,7 +21,7 @@ import {
 } from "../shared/schemas.js";
 import { assertInsideBase } from "../shared/pathSafety.js";
 import { getStorageSummaryAsync } from "../infra/storage/storageSummary.js";
-import { sanitizeFileName, sendFileDownloadAs } from "../utils/file.js";
+import { sendFileDownloadAs } from "../utils/file.js";
 
 interface ResolveBody
 {
@@ -494,7 +494,13 @@ export async function registerApiRoutes(
                     ip: getClientIp(request),
                     userAgent: getUserAgent(request)
                 });
-                return sendFileDownloadAs(reply, safePath, buildFriendlyDownloadName(job.book?.title, kind, format));
+                const downloadName = await jobService.getDownloadDisplayNameAsync(
+                    safePath,
+                    kind,
+                    format,
+                    job.book
+                );
+                return sendFileDownloadAs(reply, safePath, downloadName);
             }
             catch (error)
             {
@@ -564,7 +570,13 @@ export async function registerApiRoutes(
                     ip: getClientIp(request),
                     userAgent: getUserAgent(request)
                 });
-                return sendFileDownloadAs(reply, safePath, buildFriendlyDownloadName(item.title, kind, format));
+                const downloadName = await jobService.getDownloadDisplayNameAsync(
+                    safePath,
+                    kind,
+                    format,
+                    libraryService.toBookInfo(item)
+                );
+                return sendFileDownloadAs(reply, safePath, downloadName);
             }
             catch (error)
             {
@@ -736,13 +748,6 @@ function isAdminPortalRequest(request: FastifyRequest, expectedToken: string): b
     }
 
     return headerToken.trim() === expectedToken;
-}
-
-function buildFriendlyDownloadName(title: string | undefined, kind: "original" | "translated", format: DownloadFormat): string
-{
-    const safeTitle = sanitizeFileName(title || "tomato-novel");
-    const suffix = kind === "translated" ? "_vi" : "";
-    return `${safeTitle}${suffix}.${format}`;
 }
 
 function readInput(body: ResolveBody | DownloadBody | undefined): string | undefined
