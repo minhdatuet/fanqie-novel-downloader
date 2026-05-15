@@ -400,11 +400,24 @@ export class JobService
                 });
             });
 
-            this.throwIfCancelled(jobId);
+                        this.throwIfCancelled(jobId);
             this.update(jobId, {
-                progress: progress(99, 100, "Äang ghi file vÃ  cáº­p nháº­t thÆ° viá»‡n")
+                progress: progress(99, 100, "Đang ghi file và cập nhật thư viện")
             });
-            await this.artifacts.saveDownloadedBookAsync(jobId, plan.book, chapters, translatedBook);
+            const originalPath = await this.artifacts.saveDownloadedBookAsync(jobId, plan.book, chapters, translatedBook);
+            this.library.invalidate();
+
+            this.update(jobId, {
+                files: {
+                    originalTxt: originalPath
+                },
+                outputFormat: "txt",
+                progress: progress(chapters.length, chapters.length, "Đã tải xong bản tiếng Trung"),
+                status: "completed"
+            });
+            this.recordJobEvent(jobId, "info", "Job tải đã hoàn tất", {
+                output: originalPath
+            });
         }
         catch (error)
         {
@@ -477,9 +490,27 @@ export class JobService
 
                         this.throwIfCancelled(jobId);
                         this.update(jobId, {
-                            progress: progress(99, 100, "Äang ghi file vÃ  cáº­p nháº­t thÆ° viá»‡n")
+                            progress: progress(99, 100, "Đang ghi file và cập nhật thư viện")
                         });
-                        await this.artifacts.saveDownloadedBookAsync(jobId, plan.book, chapters, translatedBook);
+                        const savedOriginalPath = await this.artifacts.saveDownloadedBookAsync(
+                            jobId,
+                            plan.book,
+                            chapters,
+                            translatedBook
+                        );
+                        this.library.invalidate();
+
+                        this.update(jobId, {
+                            files: {
+                                originalTxt: savedOriginalPath
+                            },
+                            outputFormat: "txt",
+                            progress: progress(chapters.length, chapters.length, "Đã tải xong bản tiếng Trung"),
+                            status: "completed"
+                        });
+                        this.recordJobEvent(jobId, "info", "Job tải đã hoàn tất", {
+                            output: savedOriginalPath
+                        });
                         return;
                     }
 
@@ -1222,3 +1253,4 @@ function normalizeTranslatedText(text: string): string
         .replace(/\r/g, "\n")
         .trim();
 }
+
