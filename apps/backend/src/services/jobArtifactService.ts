@@ -145,7 +145,8 @@ export class JobArtifactService
         jobId: string,
         bookForFile: BookInfo,
         chapters: readonly StoredChapter[],
-        libraryBook?: BookInfo
+        libraryBook?: BookInfo,
+        onStage?: (message: string) => void
     ): Promise<string>
     {
         const bookDir = resolve(this.config.dataDir, "books", bookForFile.bookId);
@@ -160,9 +161,12 @@ export class JobArtifactService
             false
         );
 
+        onStage?.("Đang ghi file TXT bản gốc");
         await this.writeTextArtifactAsync(jobId, originalTxt, content);
+        onStage?.("Đang ghi dữ liệu chương");
         await this.writeChaptersJsonAsync(bookDir, chapters);
 
+        onStage?.("Đang kiểm tra file và cập nhật thư viện");
         const artifact = await this.buildArtifactAsync(originalTxt);
         const updatedAt = new Date().toISOString();
 
@@ -201,7 +205,8 @@ export class JobArtifactService
         jobId: string,
         source: JobRecord,
         translatedBook: BookInfo,
-        chapters: readonly StoredChapter[]
+        chapters: readonly StoredChapter[],
+        onStage?: (message: string) => void
     ): Promise<string>
     {
         if (!source.book)
@@ -221,12 +226,14 @@ export class JobArtifactService
 
         if (sourceOriginalPath && sourceOriginalPath !== originalTxt && !existsSync(originalTxt))
         {
+            onStage?.("Đang chuẩn bị file gốc cho bản dịch");
             await mkdir(baseDir, { recursive: true });
             await copyFile(sourceOriginalPath, originalTxt);
         }
 
         if (existsSync(originalTxt))
         {
+            onStage?.("Đang kiểm tra file gốc");
             originalArtifact = await this.buildArtifactAsync(originalTxt);
         }
         else if (sourceOriginalPath)
@@ -244,9 +251,12 @@ export class JobArtifactService
             true
         );
 
+        onStage?.("Đang ghi file TXT bản dịch");
         await this.writeTextArtifactAsync(jobId, targetTxt, content);
+        onStage?.("Đang ghi dữ liệu chương");
         await this.writeChaptersJsonAsync(baseDir, chapters);
 
+        onStage?.("Đang kiểm tra file và cập nhật thư viện");
         const artifact = await this.buildArtifactAsync(targetTxt);
         const updatedAt = new Date().toISOString();
 

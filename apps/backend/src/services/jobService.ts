@@ -38,7 +38,7 @@ interface ChapterProgress
     total: number;
 }
 
-const JOB_CANCELLED_ERROR_MESSAGE = "Job Ä‘Ã£ bá»‹ há»§y";
+const JOB_CANCELLED_ERROR_MESSAGE = "Job đã bị hủy";
 
 export class JobService
 {
@@ -115,7 +115,7 @@ export class JobService
     }
 
     /**
-     * Khá»Ÿi Ä‘á»™ng sá»›m legacy backend Ä‘á»ƒ giáº£m Ä‘á»™ trá»… á»Ÿ láº§n kiá»ƒm tra Ä‘áº§u tiÃªn.
+     * Khởi động sớm legacy backend để giảm độ trễ ở lần kiểm tra đầu tiên.
      */
     public async warmLegacyAsync(): Promise<void>
     {
@@ -152,12 +152,12 @@ export class JobService
 
         if (!source || source.status !== "completed")
         {
-            throw new Error("Job táº£i chÆ°a hoÃ n táº¥t");
+            throw new Error("Job tải chưa hoàn tất");
         }
 
         if (!source.files.chaptersJson && !source.files.originalTxt && !source.files.originalEpub)
         {
-            throw new Error("KhÃ´ng tÃ¬m tháº¥y file tiáº¿ng Trung Ä‘á»ƒ dá»‹ch");
+            throw new Error("Không tìm thấy file tiếng Trung để dịch");
         }
 
         const bookId = source.book?.bookId;
@@ -180,7 +180,7 @@ export class JobService
     {
         if (!item.originalPath)
         {
-            throw new Error("Truyá»‡n chÆ°a cÃ³ file tiáº¿ng Trung Ä‘á»ƒ dá»‹ch");
+            throw new Error("Truyện chưa có file tiếng Trung để dịch");
         }
 
         const activeJob = this.findActiveJobByBookId(item.bookId);
@@ -209,8 +209,8 @@ export class JobService
     }
 
     /**
-     * Láº¥y Ä‘Æ°á»ng dáº«n file theo job vÃ  sinh láº¡i Ä‘á»‹nh dáº¡ng cÃ²n thiáº¿u náº¿u cáº§n.
-     * Äáº§u vÃ o lÃ  id job, loáº¡i file vÃ  Ä‘á»‹nh dáº¡ng mong muá»‘n.
+     * Lấy đường dẫn file theo job và sinh lại định dạng còn thiếu nếu cần.
+     * Đầu vào là id job, loại file và định dạng mong muốn.
      */
     public async getJobFilePathAsync(
         jobId: string,
@@ -222,8 +222,8 @@ export class JobService
     }
 
     /**
-     * Láº¥y Ä‘Æ°á»ng dáº«n file trong thÆ° viá»‡n theo bookId vÃ  sinh láº¡i Ä‘á»‹nh dáº¡ng cÃ²n thiáº¿u náº¿u cáº§n.
-     * Äáº§u vÃ o lÃ  bookId, loáº¡i file vÃ  Ä‘á»‹nh dáº¡ng mong muá»‘n.
+     * Lấy đường dẫn file trong thư viện theo bookId và sinh lại định dạng còn thiếu nếu cần.
+     * Đầu vào là bookId, loại file và định dạng mong muốn.
      */
     public async getLibraryFilePathAsync(
         item: LibraryItem,
@@ -235,8 +235,8 @@ export class JobService
     }
 
     /**
-     * Láº¥y tÃªn file táº£i xuá»‘ng hiá»ƒn thá»‹ cho má»™t file gá»‘c hoáº·c báº£n dá»‹ch.
-     * Äáº§u vÃ o lÃ  Ä‘Æ°á»ng dáº«n file nguá»“n, loáº¡i file vÃ  Ä‘á»‹nh dáº¡ng mong muá»‘n.
+     * Lấy tên file tải xuống hiển thị cho một file gốc hoặc bản dịch.
+     * Đầu vào là đường dẫn file nguồn, loại file và định dạng mong muốn.
      */
     public async getDownloadDisplayNameAsync(
         sourcePath: string,
@@ -268,7 +268,7 @@ export class JobService
 
         if (!job)
         {
-            throw new Error("KhÃ´ng tÃ¬m tháº¥y job");
+            throw new Error("Không tìm thấy job");
         }
 
         if (job.status === "completed" || job.status === "failed" || job.status === "canceled")
@@ -280,14 +280,14 @@ export class JobService
         const next: JobRecord = {
             ...job,
             error: undefined,
-            progress: progress(job.progress.current, job.progress.total, "ÄÃ£ há»§y job"),
+            progress: progress(job.progress.current, job.progress.total, "Đã hủy job"),
             status: "canceled",
             updatedAt: new Date().toISOString()
         };
 
         this.jobs.set(jobId, next);
         this.events.emit(`job:${jobId}`, next);
-        this.recordJobEvent(jobId, "warn", "Job Ä‘Ã£ bá»‹ há»§y", {
+        this.recordJobEvent(jobId, "warn", "Job đã bị hủy", {
             status: next.status
         });
         void this.persist(next);
@@ -301,12 +301,12 @@ export class JobService
 
         if (!job)
         {
-            throw new Error("KhÃ´ng tÃ¬m tháº¥y job");
+            throw new Error("Không tìm thấy job");
         }
 
         if (job.status !== "failed" && job.status !== "canceled")
         {
-            throw new Error("Chá»‰ cÃ³ thá»ƒ thá»­ láº¡i job Ä‘Ã£ tháº¥t báº¡i hoáº·c Ä‘Ã£ há»§y");
+            throw new Error("Chỉ có thể thử lại job đã thất bại hoặc đã hủy");
         }
 
         if (job.kind === "download")
@@ -315,7 +315,7 @@ export class JobService
 
             if (!input)
             {
-                throw new Error("Thiáº¿u input Ä‘á»ƒ thá»­ láº¡i job táº£i");
+                throw new Error("Thiếu input để thử lại job tải");
             }
 
             return this.createDownloadJob(input, actorKey);
@@ -325,7 +325,7 @@ export class JobService
         {
             if (!job.book)
             {
-                throw new Error("Thiáº¿u thÃ´ng tin truyá»‡n Ä‘á»ƒ thá»­ láº¡i job dá»‹ch thÆ° viá»‡n");
+                throw new Error("Thiếu thông tin truyện để thử lại job dịch thư viện");
             }
 
             const originalPath = job.files.originalTxt ?? job.files.originalEpub;
@@ -333,7 +333,7 @@ export class JobService
 
             if (!originalPath)
             {
-                throw new Error("Thiáº¿u file gá»‘c Ä‘á»ƒ thá»­ láº¡i job dá»‹ch thÆ° viá»‡n");
+                throw new Error("Thiếu file gốc để thử lại job dịch thư viện");
             }
 
             return this.createTranslateJobFromLibrary({
@@ -354,7 +354,7 @@ export class JobService
 
         if (!job.sourceJobId)
         {
-            throw new Error("Thiáº¿u job nguá»“n Ä‘á»ƒ thá»­ láº¡i");
+            throw new Error("Thiếu job nguồn để thử lại");
         }
 
         return this.createTranslateJob(job.sourceJobId, actorKey);
@@ -366,7 +366,7 @@ export class JobService
         {
             this.throwIfCancelled(jobId);
             this.update(jobId, {
-                progress: progress(0, 1, "Äang láº¥y thÃ´ng tin truyá»‡n"),
+                progress: progress(0, 1, "Đang lấy thông tin truyện"),
                 status: "running"
             });
 
@@ -376,7 +376,7 @@ export class JobService
             this.throwIfCancelled(jobId);
             this.update(jobId, {
                 book: translatedBook,
-                progress: progress(0, plan.chapters.length, "ÄÃ£ láº¥y thÃ´ng tin, báº¯t Ä‘áº§u táº£i báº£n gá»‘c")
+                progress: progress(0, plan.chapters.length, "Đã lấy thông tin, bắt đầu tải bản gốc")
             });
 
             const chapters = await this.fanqie.downloadPlan(plan, (state) =>
@@ -389,13 +389,20 @@ export class JobService
 
             this.throwIfCancelled(jobId);
             this.update(jobId, {
-                progress: progress(99, 100, "Đang ghi file và cập nhật thư viện")
+                progress: progress(chapters.length, chapters.length, "Đang ghi file và cập nhật thư viện")
             });
             const originalPath = await this.artifacts.saveDownloadedBookAsync(
                 jobId,
                 plan.book,
                 chapters,
-                translatedBook
+                translatedBook,
+                (message) =>
+                {
+                    this.throwIfCancelled(jobId);
+                    this.update(jobId, {
+                        progress: progress(chapters.length, chapters.length, message)
+                    });
+                }
             );
             this.library.invalidate();
 
@@ -423,7 +430,7 @@ export class JobService
         {
             this.throwIfCancelled(jobId);
             this.update(jobId, {
-                progress: progress(0, 1, "Äang khá»Ÿi Ä‘á»™ng lÃµi táº£i"),
+                progress: progress(0, 1, "Đang khởi động lõi tải"),
                 status: "running"
             });
 
@@ -433,7 +440,7 @@ export class JobService
             this.throwIfCancelled(jobId);
             this.update(jobId, {
                 book: translatedBook,
-                progress: progress(0, translatedBook.chapterCount || 1, "ÄÃ£ láº¥y thÃ´ng tin truyá»‡n")
+                progress: progress(0, translatedBook.chapterCount || 1, "Đã lấy thông tin truyện")
             });
 
             const legacyJob = await this.legacy.createDownloadJob(input);
@@ -471,24 +478,31 @@ export class JobService
 
                         if (!originalPath)
                         {
-                            throw new Error("ÄÃ£ táº£i xong nhÆ°ng khÃ´ng tÃ¬m tháº¥y file TXT Ä‘áº§u ra");
+                            throw new Error("Đã tải xong nhưng không tìm thấy file TXT đầu ra");
                         }
 
                         const chapters = await this.artifacts.loadChaptersFromPathAsync(originalPath);
                         if (chapters.length === 0)
                         {
-                            throw new Error("KhÃ´ng Ä‘á»c Ä‘Æ°á»£c ná»™i dung tá»« file TXT Ä‘áº§u ra");
+                            throw new Error("Không đọc được nội dung từ file TXT đầu ra");
                         }
 
                         this.throwIfCancelled(jobId);
                         this.update(jobId, {
-                            progress: progress(99, 100, "Đang ghi file và cập nhật thư viện")
+                            progress: progress(chapters.length, chapters.length, "Đang ghi file và cập nhật thư viện")
                         });
                         const savedOriginalPath = await this.artifacts.saveDownloadedBookAsync(
                             jobId,
                             plan.book,
                             chapters,
-                            translatedBook
+                            translatedBook,
+                            (message) =>
+                            {
+                                this.throwIfCancelled(jobId);
+                                this.update(jobId, {
+                                    progress: progress(chapters.length, chapters.length, message)
+                                });
+                            }
                         );
                         this.library.invalidate();
 
@@ -528,11 +542,11 @@ export class JobService
             this.throwIfCancelled(jobId);
             if (!source.book)
             {
-                throw new Error("Thiáº¿u thÃ´ng tin truyá»‡n Ä‘á»ƒ dá»‹ch");
+                throw new Error("Thiếu thông tin truyện để dịch");
             }
 
             this.update(jobId, {
-                progress: progress(0, 1, "Äang Ä‘á»c file tiáº¿ng Trung"),
+                progress: progress(0, 1, "Đang đọc file tiếng Trung"),
                 status: "running"
             });
 
@@ -541,7 +555,7 @@ export class JobService
             source.book = translatedBook;
             this.update(jobId, {
                 book: translatedBook,
-                progress: progress(0, 1, "Äang dá»‹ch thÃ´ng tin truyá»‡n")
+                progress: progress(0, 1, "Đang dịch thông tin truyện")
             });
 
             const chapters = await this.artifacts.loadSourceChaptersAsync(source);
@@ -577,7 +591,7 @@ export class JobService
                         progress: progress(
                             completedChapters,
                             chapters.length,
-                            `ÄÃ£ dá»‹ch ${completedChapters}/${chapters.length} chÆ°Æ¡ng`
+                            `Đã dịch ${completedChapters}/${chapters.length} chương`
                         )
                     });
                 }));
@@ -591,13 +605,20 @@ export class JobService
 
             this.throwIfCancelled(jobId);
             this.update(jobId, {
-                progress: progress(99, 100, "Äang ghi báº£n dá»‹ch vÃ  cáº­p nháº­t thÆ° viá»‡n")
+                progress: progress(chapters.length, chapters.length, "Đang ghi bản dịch và cập nhật thư viện")
             });
             const translatedPath = await this.artifacts.saveTranslatedBookAsync(
                 jobId,
                 source,
                 translatedBook,
-                translated
+                translated,
+                (message) =>
+                {
+                    this.throwIfCancelled(jobId);
+                    this.update(jobId, {
+                        progress: progress(chapters.length, chapters.length, message)
+                    });
+                }
             );
             this.library.invalidate();
 
@@ -606,10 +627,10 @@ export class JobService
                     translatedTxt: translatedPath
                 },
                 book: translatedBook,
-                    progress: progress(chapters.length, chapters.length, "ÄÃ£ dá»‹ch xong tiáº¿ng Viá»‡t"),
-                    status: "completed"
-                });
-            this.recordJobEvent(jobId, "info", "Job dá»‹ch Ä‘Ã£ hoÃ n táº¥t", {
+                progress: progress(chapters.length, chapters.length, "Đã dịch xong tiếng Việt"),
+                status: "completed"
+            });
+            this.recordJobEvent(jobId, "info", "Job dịch đã hoàn tất", {
                 translatedPath
             });
         }
@@ -623,20 +644,22 @@ export class JobService
         jobId: string,
         bookForFile: BookInfo,
         chapters: readonly StoredChapter[],
-        libraryBook?: BookInfo
+        libraryBook?: BookInfo,
+        onStage?: (message: string) => void
     ): Promise<void>
     {
-        await this.artifacts.saveDownloadedBookAsync(jobId, bookForFile, chapters, libraryBook);
+        await this.artifacts.saveDownloadedBookAsync(jobId, bookForFile, chapters, libraryBook, onStage);
     }
 
     private async saveTranslatedBook(
         jobId: string,
         source: JobRecord,
         translatedBook: BookInfo,
-        chapters: readonly StoredChapter[]
+        chapters: readonly StoredChapter[],
+        onStage?: (message: string) => void
     ): Promise<string>
     {
-        return this.artifacts.saveTranslatedBookAsync(jobId, source, translatedBook, chapters);
+        return this.artifacts.saveTranslatedBookAsync(jobId, source, translatedBook, chapters, onStage);
     }
 
     private async translateBookMetadataAsync(book: BookInfo, jobId: string): Promise<BookInfo>
@@ -654,7 +677,7 @@ export class JobService
     ): JobRecord
     {
         this.quotaService?.consume(actorKey, {
-            label: kind === "download" ? "Táº¡o job táº£i" : "Táº¡o job dá»‹ch",
+            label: kind === "download" ? "Tạo job tải" : "Tạo job dịch",
             limit: this.config.dailyJobQuota,
             windowMs: JobService.DAILY_JOB_QUOTA_WINDOW_MS
         });
@@ -668,7 +691,7 @@ export class JobService
             kind,
             input,
             outputFormat,
-            progress: progress(0, 1, "Äang xáº¿p hÃ ng"),
+            progress: progress(0, 1, "Đang xếp hàng"),
             sourceJobId,
             status: "queued",
             updatedAt: now
@@ -682,7 +705,7 @@ export class JobService
                 return;
             }
 
-            this.recordJobEvent(job.id, "info", "Job Ä‘Ã£ Ä‘Æ°á»£c táº¡o", {
+            this.recordJobEvent(job.id, "info", "Job đã được tạo", {
                 kind,
                 sourceJobId,
                 input
@@ -716,7 +739,7 @@ export class JobService
         this.events.emit(`job:${id}`, next);
         if (current.status !== next.status)
         {
-            this.recordJobEvent(id, "info", `Tráº¡ng thÃ¡i job Ä‘á»•i sang ${next.status}`, {
+            this.recordJobEvent(id, "info", `Trạng thái job đổi sang ${next.status}`, {
                 status: next.status
             });
         }
@@ -737,14 +760,14 @@ export class JobService
             const next: JobRecord = {
                 ...current,
                 error: undefined,
-                progress: progress(current.progress.current, current.progress.total, "ÄÃ£ há»§y job"),
+                progress: progress(current.progress.current, current.progress.total, "Đã hủy job"),
                 status: "canceled",
                 updatedAt: new Date().toISOString()
             };
 
             this.jobs.set(id, next);
             this.events.emit(`job:${id}`, next);
-            this.recordJobEvent(id, "warn", "Job bá»‹ há»§y trong quÃ¡ trÃ¬nh xá»­ lÃ½", {
+            this.recordJobEvent(id, "warn", "Job bị hủy trong quá trình xử lý", {
                 error: error instanceof Error ? error.message : String(error)
             });
             void this.persist(next);
@@ -754,7 +777,7 @@ export class JobService
 
         this.update(id, {
             error: error instanceof Error ? error.message : String(error),
-            progress: progress(0, 1, "TÃ¡c vá»¥ tháº¥t báº¡i"),
+            progress: progress(0, 1, "Tác vụ thất bại"),
             status: "failed"
         });
     }
@@ -777,7 +800,7 @@ export class JobService
         }
         catch
         {
-            // Bá» qua náº¿u service Ä‘ang Ä‘Ã³ng hoáº·c DB Ä‘Ã£ khÃ´ng cÃ²n sáºµn sÃ ng.
+            // Bỏ qua nếu service đang đóng hoặc DB đã không còn sẵn sàng.
         }
     }
 
@@ -869,7 +892,7 @@ export class JobService
 
             if (!item)
             {
-                throw new Error("KhÃ´ng tÃ¬m tháº¥y truyá»‡n trong thÆ° viá»‡n Ä‘á»ƒ dá»‹ch");
+                throw new Error("Không tìm thấy truyện trong thư viện để dịch");
             }
 
             return {
@@ -893,7 +916,7 @@ export class JobService
                 input: bookId,
                 kind: "download",
                 outputFormat: "txt",
-                progress: progress(1, 1, "ÄÃ£ cÃ³ trong thÆ° viá»‡n"),
+                progress: progress(1, 1, "Đã có trong thư viện"),
                 status: "completed",
                 updatedAt: item.updatedAt
             };
@@ -901,7 +924,7 @@ export class JobService
 
         if (!job.sourceJobId)
         {
-            throw new Error("KhÃ´ng tÃ¬m tháº¥y job nguá»“n Ä‘á»ƒ dá»‹ch");
+            throw new Error("Không tìm thấy job nguồn để dịch");
         }
 
         const source = this.getJob(job.sourceJobId);
@@ -909,12 +932,12 @@ export class JobService
 
         if (!source || source.status !== "completed")
         {
-            throw new Error("Job táº£i chÆ°a hoÃ n táº¥t");
+            throw new Error("Job tải chưa hoàn tất");
         }
 
         if (!source.book)
         {
-            throw new Error("Thiáº¿u thÃ´ng tin truyá»‡n Ä‘á»ƒ dá»‹ch");
+            throw new Error("Thiếu thông tin truyện để dịch");
         }
 
         return source;
@@ -977,14 +1000,14 @@ export class JobService
         }
         catch
         {
-            // Bá» qua náº¿u service Ä‘ang Ä‘Ã³ng hoáº·c DB Ä‘Ã£ khÃ´ng cÃ²n sáºµn sÃ ng.
+            // Bỏ qua nếu service đang đóng hoặc DB đã không còn sẵn sàng.
         }
     }
 }
 
 function readHeaderValue(lines: readonly string[], labels: readonly string[]): string | undefined
 {
-    const pattern = new RegExp(`^(?:${labels.map(escapeRegExp).join("|")})\\s*[ï¼š:]\\s*(.*)$`, "i");
+    const pattern = new RegExp(`^(?:${labels.map(escapeRegExp).join("|")})\\s*[：:]\\s*(.*)$`, "i");
 
     for (const line of lines)
     {
@@ -1001,7 +1024,7 @@ function readHeaderValue(lines: readonly string[], labels: readonly string[]): s
 
 function readHeaderBlock(lines: readonly string[], labels: readonly string[]): string | undefined
 {
-    const labelPattern = new RegExp(`^(?:${labels.map(escapeRegExp).join("|")})\\s*[ï¼š:]\\s*(.*)$`, "i");
+    const labelPattern = new RegExp(`^(?:${labels.map(escapeRegExp).join("|")})\\s*[：:]\\s*(.*)$`, "i");
     const separatorPattern = /^(?:={40}|-{40})$/;
 
     for (let index = 0; index < lines.length; index += 1)
@@ -1114,7 +1137,7 @@ function cleanTitle(input: string): string
 {
     return input
         .replace(/_vi$/i, "")
-        .trim() || "Truyá»‡n chÆ°a Ä‘áº·t tÃªn";
+        .trim() || "Truyện chưa đặt tên";
 }
 
 function sleep(ms: number): Promise<void>
