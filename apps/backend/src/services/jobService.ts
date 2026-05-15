@@ -455,8 +455,10 @@ export class JobService
 
             const plan = await this.fanqie.preparePlan(input);
             this.throwIfCancelled(jobId);
+            const translatedBook = await this.translateBookMetadataAsync(plan.book, jobId);
+            this.throwIfCancelled(jobId);
             this.update(jobId, {
-                book: plan.book,
+                book: translatedBook,
                 progress: progress(0, plan.chapters.length, "Đã lấy thông tin, bắt đầu tải bản gốc")
             });
 
@@ -469,7 +471,7 @@ export class JobService
             });
 
             this.throwIfCancelled(jobId);
-            await this.saveDownloadedBook(jobId, plan.book, chapters);
+            await this.saveDownloadedBook(jobId, translatedBook, chapters);
         }
         catch (error)
         {
@@ -489,9 +491,11 @@ export class JobService
 
             const plan = await this.legacy.resolveBook(input);
             this.throwIfCancelled(jobId);
+            const translatedBook = await this.translateBookMetadataAsync(plan.book, jobId);
+            this.throwIfCancelled(jobId);
             this.update(jobId, {
-                book: plan.book,
-                progress: progress(0, plan.book.chapterCount || 1, "Đã lấy thông tin truyện")
+                book: translatedBook,
+                progress: progress(0, translatedBook.chapterCount || 1, "Đã lấy thông tin truyện")
             });
 
             const legacyJob = await this.legacy.createDownloadJob(input);
@@ -513,8 +517,8 @@ export class JobService
                     {
                         this.update(jobId, {
                             book: {
-                                ...plan.book,
-                                author: current.author ?? plan.book.author
+                                ...translatedBook,
+                                author: current.author ?? translatedBook.author
                             }
                         });
                     }
@@ -539,7 +543,7 @@ export class JobService
                         }
 
                         this.throwIfCancelled(jobId);
-                        await this.saveDownloadedBook(jobId, plan.book, chapters);
+                        await this.saveDownloadedBook(jobId, translatedBook, chapters);
                         return;
                     }
 
