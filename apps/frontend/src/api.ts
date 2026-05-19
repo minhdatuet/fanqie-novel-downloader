@@ -1,4 +1,11 @@
-import type { AdminOverview, DownloadFormat, DownloadPlan, JobRecord, LibraryItem } from "./types";
+import type {
+    AdminOverview,
+    DownloadFormat,
+    DownloadPlan,
+    JobRecord,
+    LibraryItem,
+    SourceInfo
+} from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -22,19 +29,28 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T>
     return response.json() as Promise<T>;
 }
 
-export function resolveBook(input: string): Promise<DownloadPlan>
+export function getSources(): Promise<{ items: SourceInfo[] }>
+{
+    return requestJson<{ items: SourceInfo[] }>("/api/sources");
+}
+
+export function resolveBook(input: string, sourceId?: string): Promise<DownloadPlan>
 {
     return requestJson<DownloadPlan>("/api/books/resolve", {
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({
+            input,
+            sourceId
+        }),
         method: "POST"
     });
 }
 
-export function startDownload(input: string): Promise<JobRecord>
+export function startDownload(input: string, sourceId?: string): Promise<JobRecord>
 {
     return requestJson<JobRecord>("/api/jobs/download", {
         body: JSON.stringify({
-            input
+            input,
+            sourceId
         }),
         method: "POST"
     });

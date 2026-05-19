@@ -6,12 +6,16 @@ export interface LibraryItem
 {
     author?: string;
     bookId: string;
+    canonicalBookKey?: string;
     coverUrl?: string;
     description?: string;
     hasOriginal: boolean;
     hasTranslated: boolean;
+    language?: "zh" | "vi" | "en" | "unknown";
     originalPath?: string;
     relativeDir: string;
+    sourceBookId?: string;
+    sourceId?: string;
     tags: string[];
     title: string;
     translatedPath?: string;
@@ -62,9 +66,13 @@ export class LibraryService
         return {
             author: item.author,
             bookId: item.bookId,
+            canonicalBookKey: item.canonicalBookKey,
             chapterCount: 0,
             coverUrl: item.coverUrl,
             description: item.description,
+            language: item.language,
+            sourceBookId: item.sourceBookId ?? item.bookId,
+            sourceId: item.sourceId ?? "fanqie",
             tags: item.tags,
             title: item.title
         };

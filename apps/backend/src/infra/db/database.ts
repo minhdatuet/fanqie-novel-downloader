@@ -4,8 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import { relative, resolve } from "node:path";
 
 import type { AppConfig } from "../../config.js";
-import type { BookInfo, JobRecord, JobFileSet } from "../../types.js";
+import type { BookInfo, JobFileSet, JobRecord, JobStatus } from "../../types.js";
 import type { LibraryItem, LibraryQuery } from "../../services/libraryService.js";
+import { displayProgress } from "../../utils/jobProgress.js";
 import { assertInsideBase } from "../../shared/pathSafety.js";
 
 export interface DbFileInput
@@ -256,7 +257,7 @@ export class DatabaseService
             original_author: item.author ?? null,
             original_description: item.description ?? null,
             original_title: item.title,
-            source: "legacy",
+            source: item.sourceId ?? "fanqie",
             tags_json: JSON.stringify(item.tags ?? []),
             title: item.title,
             updated_at: now
@@ -872,17 +873,23 @@ export class DatabaseService
             return assertInsideBase(this.dataDir, resolve(this.dataDir, path));
         };
 
+        const sourceId = normalizeSourceId(book.source);
+
         return {
             author: book.author ?? undefined,
             bookId: book.id,
+            canonicalBookKey: `${sourceId}:${book.id}`,
             coverUrl: book.cover_url ?? undefined,
             description: book.description ?? undefined,
             hasOriginal: originalFiles.length > 0,
             hasTranslated: translatedFiles.length > 0,
+            language: "zh",
             originalPath: absolute(originalTxt?.relative_path ?? originalEpub?.relative_path),
             relativeDir: bestFile
                 ? relative(this.dataDir, resolve(this.dataDir, bestFile.relative_path)).replace(/\\/g, "/")
                 : "",
+            sourceBookId: book.id,
+            sourceId,
             tags,
             title: book.title,
             translatedPath: absolute(translatedTxt?.relative_path ?? translatedEpub?.relative_path),
@@ -892,13 +899,20 @@ export class DatabaseService
 
     private mapBook(row: DbBookRow): BookInfo
     {
+        const sourceId = normalizeSourceId(row.source);
+
         return {
             author: row.author ?? undefined,
             bookId: row.id,
+            canonicalBookKey: `${sourceId}:${row.id}`,
             chapterCount: row.chapter_count ?? 0,
             coverUrl: row.cover_url ?? undefined,
             description: row.description ?? undefined,
             finished: row.finished === null ? undefined : Boolean(row.finished),
+            language: "zh",
+            originalUrl: undefined,
+            sourceBookId: row.id,
+            sourceId,
             tags: row.tags_json ? JSON.parse(row.tags_json) as string[] : [],
             title: row.title
         };
@@ -937,12 +951,12 @@ export class DatabaseService
             kind: row.type as JobRecord["kind"],
             input: row.input ?? undefined,
             outputFormat: undefined,
-            progress: {
-                current: row.progress_current ?? 0,
-                message: row.progress_message ?? "",
-                percent: row.progress_total ? Math.round(((row.progress_current ?? 0) / row.progress_total) * 100) : 0,
-                total: row.progress_total ?? 1
-            },
+            progress: displayProgress(
+                row.progress_current ?? 0,
+                row.progress_total ?? 1,
+                row.progress_message ?? "",
+                row.status as JobStatus
+            ),
             sourceJobId: row.source_job_id ?? undefined,
             status: row.status as JobRecord["status"],
             updatedAt: row.updated_at
@@ -965,6 +979,16 @@ export class DatabaseService
 function normalize(input: string): string
 {
     return input.toLowerCase().replace(/\s+/g, "");
+}
+
+function normalizeSourceId(sourceId: string | null): string
+{
+    if (!sourceId || sourceId === "legacy")
+    {
+        return "fanqie";
+    }
+
+    return sourceId;
 }
 
 function paginateLibraryItems(items: LibraryItem[], page?: number, pageSize?: number): LibraryItem[]

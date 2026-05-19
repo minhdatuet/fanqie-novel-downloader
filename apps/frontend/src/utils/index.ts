@@ -27,3 +27,50 @@ export function formatLabelFromPath(path?: string): string {
   if (!path) return "TXT";
   return path.toLowerCase().endsWith(".epub") ? "EPUB" : "TXT";
 }
+
+export function formatSourceName(sourceId?: string): string
+{
+  if (!sourceId)
+  {
+    return "Fanqie";
+  }
+
+  const normalized = sourceId.trim().toLowerCase();
+
+  if (normalized === "fanqie")
+  {
+    return "Fanqie";
+  }
+
+  if (normalized === "qidian")
+  {
+    return "Qidian";
+  }
+
+  if (normalized === "69shu")
+  {
+    return "69shu";
+  }
+
+  return sourceId;
+}
+
+export function formatLanguageName(language?: string): string
+{
+  if (!language)
+  {
+    return "Không rõ";
+  }
+
+  switch (language.trim().toLowerCase())
+  {
+    case "zh":
+      return "Tiếng Trung";
+    case "vi":
+      return "Tiếng Việt";
+    case "en":
+      return "Tiếng Anh";
+    default:
+      return language;
+  }
+}

@@ -2,6 +2,7 @@ import React from "react";
 import { Book, ChevronLeft, ChevronRight, Download, Languages, Search, X } from "lucide-react";
 
 import type { LibraryItem } from "../types";
+import { formatSourceName } from "../utils";
 import { cn } from "./ui/utils";
 import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
@@ -113,11 +114,16 @@ export function LibraryTable({
                                                 </div>
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="max-w-[200px] truncate font-bold sm:max-w-[300px]">
-                                                    {item.title}
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <div className="max-w-[200px] truncate font-bold sm:max-w-[300px]">
+                                                        {item.title}
+                                                    </div>
+                                                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
+                                                        {formatSourceName(item.sourceId)}
+                                                    </span>
                                                 </div>
                                                 <div className="font-mono text-[11px] text-muted-foreground">
-                                                    ID: {item.bookId}
+                                                    {item.sourceBookId ?? item.bookId}
                                                 </div>
                                                 <div className="mt-1 text-xs italic text-muted-foreground md:hidden">
                                                     {item.author || "N/A"}

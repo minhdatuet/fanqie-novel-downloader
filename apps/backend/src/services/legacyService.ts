@@ -7,6 +7,7 @@ import type { FastifyReply } from "fastify";
 
 import type { AppConfig } from "../config.js";
 import type { BookInfo, DownloadPlan, ProgressState } from "../types.js";
+import { getDefaultSource } from "./sourceCatalog.js";
 
 interface LegacyPreview
 {
@@ -101,6 +102,7 @@ export class LegacyService
         const plan = {
             book: this.mapPreview(preview, bookId),
             chapters: [],
+            provider: getDefaultSource(),
             raw: preview
         };
 
@@ -152,10 +154,14 @@ export class LegacyService
         const groupDone = job.progress?.group_done ?? 0;
         const groupProgress = Math.round((groupDone / groupTotal) * total);
         const current = Math.min(total, Math.max(savedChapters, groupProgress));
+        const isFinalRetryStage = job.state === "running" && current >= total;
+        const message = isFinalRetryStage
+            ? "Đang thử lại các chapter lỗi"
+            : job.message || mapLegacyStateMessage(job.state);
 
         return {
             current,
-            message: job.message || mapLegacyStateMessage(job.state),
+            message,
             percent: total > 0 ? Math.round((current / total) * 100) : 0,
             total: Math.max(1, total)
         };
@@ -326,13 +332,20 @@ export class LegacyService
 
     private mapPreview(preview: LegacyPreview, fallbackBookId: string): BookInfo
     {
+        const sourceBookId = preview.book_id || fallbackBookId;
+
         return {
             author: preview.author,
-            bookId: preview.book_id || fallbackBookId,
+            bookId: sourceBookId,
+            canonicalBookKey: `fanqie:${sourceBookId}`,
             chapterCount: preview.chapter_count ?? 0,
             coverUrl: preview.detail_cover_url || preview.cover_url,
             description: preview.description,
             finished: preview.finished,
+            language: "zh",
+            originalUrl: `${this.baseUrl}/api/preview/${encodeURIComponent(sourceBookId)}`,
+            sourceBookId,
+            sourceId: "fanqie",
             tags: preview.tags ?? (preview.category ? [preview.category] : []),
             title: preview.book_name || `Truyện ${fallbackBookId}`
         };

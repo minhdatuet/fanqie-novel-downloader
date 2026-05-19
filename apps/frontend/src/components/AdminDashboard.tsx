@@ -4,6 +4,7 @@ import type { AdminOverview } from "../types";
 import { Button } from "./ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/Card";
 import { Progress } from "./ui/Progress";
+import { formatSourceName } from "../utils";
 
 interface AdminDashboardProps
 {
@@ -118,7 +119,9 @@ export function AdminDashboard({ busy, overview, onRefresh }: AdminDashboardProp
                                         <tr key={job.id}>
                                             <td className="px-4 py-3">
                                                 <div className="font-medium">{job.book?.title || job.id}</div>
-                                                <div className="font-mono text-[11px] text-muted-foreground">{job.book?.bookId || job.input || "-"}</div>
+                                                <div className="font-mono text-[11px] text-muted-foreground">
+                                                    {formatSourceName(job.book?.sourceId)} · {job.book?.sourceBookId || job.book?.bookId || job.input || "-"}
+                                                </div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">

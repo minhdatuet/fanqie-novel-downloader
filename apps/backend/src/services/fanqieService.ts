@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import type { AppConfig } from "../config.js";
+import { getDefaultSource } from "./sourceCatalog.js";
 import type { BookInfo, ChapterRef, DownloadPlan, StoredChapter } from "../types.js";
 import { cleanPlainText } from "../utils/text.js";
 
@@ -68,9 +69,15 @@ export class FanqieService
         return {
             book: {
                 ...book,
-                chapterCount: book.chapterCount || chapters.length
+                chapterCount: book.chapterCount || chapters.length,
+                canonicalBookKey: `fanqie:${bookId}`,
+                language: "zh",
+                originalUrl: `https://fanqienovel.com/page/${bookId}`,
+                sourceBookId: bookId,
+                sourceId: "fanqie"
             },
             chapters,
+            provider: getDefaultSource(),
             raw: {
                 bookId,
                 source: "fanqie_web"

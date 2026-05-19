@@ -1,13 +1,28 @@
 export type DownloadFormat = "txt" | "epub";
 
+export interface SourceInfo
+{
+    displayName: string;
+    id: string;
+    inputHint: string;
+    requiresAuth: boolean;
+    supportsSearch: boolean;
+    supportsTranslate: boolean;
+}
+
 export interface BookInfo
 {
     author?: string;
     bookId: string;
     chapterCount: number;
+    canonicalBookKey?: string;
     coverUrl?: string;
     description?: string;
     finished?: boolean;
+    language?: "zh" | "vi" | "en" | "unknown";
+    originalUrl?: string;
+    sourceBookId?: string;
+    sourceId?: string;
     tags: string[];
     title: string;
 }
@@ -22,6 +37,7 @@ export interface DownloadPlan
 {
     book: BookInfo;
     chapters: ChapterRef[];
+    provider?: SourceInfo;
 }
 
 export interface JobRecord
@@ -56,10 +72,14 @@ export interface LibraryItem
 {
     author?: string;
     bookId: string;
+    canonicalBookKey?: string;
     hasOriginal: boolean;
     hasTranslated: boolean;
+    language?: "zh" | "vi" | "en" | "unknown";
     originalPath?: string;
     relativeDir: string;
+    sourceBookId?: string;
+    sourceId?: string;
     title: string;
     translatedPath?: string;
     updatedAt: string;

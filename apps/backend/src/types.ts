@@ -4,14 +4,29 @@ export type JobKind = "download" | "translate";
 
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "canceled";
 
+export interface SourceInfo
+{
+    displayName: string;
+    id: string;
+    inputHint: string;
+    supportsSearch: boolean;
+    supportsTranslate: boolean;
+    requiresAuth: boolean;
+}
+
 export interface BookInfo
 {
     author?: string;
     bookId: string;
     chapterCount: number;
     coverUrl?: string;
+    canonicalBookKey?: string;
     description?: string;
     finished?: boolean;
+    language?: "zh" | "vi" | "en" | "unknown";
+    originalUrl?: string;
+    sourceBookId?: string;
+    sourceId?: string;
     tags: string[];
     title: string;
 }
@@ -26,6 +41,7 @@ export interface DownloadPlan
 {
     book: BookInfo;
     chapters: ChapterRef[];
+    provider?: SourceInfo;
     raw: unknown;
 }
 

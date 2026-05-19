@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import {
     cancelJob,
     getLibrary,
+    getSources,
     jobFileUrl,
     libraryFileUrl,
     resolveBook,
@@ -13,7 +14,7 @@ import {
     startTranslate,
     subscribeJob
 } from "./api";
-import type { BookInfo, DownloadPlan, JobRecord, LibraryItem } from "./types";
+import type { BookInfo, DownloadPlan, JobRecord, LibraryItem, SourceInfo } from "./types";
 import { BookHero } from "./components/BookHero";
 import { JobStatus } from "./components/JobStatus";
 import { Layout } from "./components/Layout";
@@ -36,6 +37,8 @@ export function App(): React.JSX.Element
     const [libraryPage, setLibraryPage] = useState(1);
     const [libraryQuery, setLibraryQuery] = useState("");
     const [focusedBookId, setFocusedBookId] = useState("");
+    const [selectedSourceId, setSelectedSourceId] = useState("fanqie");
+    const [sources, setSources] = useState<SourceInfo[]>([]);
     const [viewMode, setViewMode] = useState<ViewMode>("download");
     const [busy, setBusy] = useState<BusyAction>();
     const [error, setError] = useState("");
@@ -43,6 +46,27 @@ export function App(): React.JSX.Element
     useEffect(() =>
     {
         void refreshLibrary("");
+    }, []);
+
+    useEffect(() =>
+    {
+        void (async () =>
+        {
+            try
+            {
+                const data = await getSources();
+                setSources(data.items);
+
+                if (data.items.length > 0 && !data.items.some((item) => item.id === selectedSourceId))
+                {
+                    setSelectedSourceId(data.items[0].id);
+                }
+            }
+            catch
+            {
+                setSources([]);
+            }
+        });
     }, []);
 
     useEffect(() =>
@@ -92,6 +116,10 @@ export function App(): React.JSX.Element
     }, [translateJob?.id]);
 
     const book = useMemo(() => plan?.book ?? downloadJob?.book, [downloadJob?.book, plan?.book]);
+    const selectedSource = useMemo(
+        () => sources.find((item) => item.id === selectedSourceId) ?? sources[0],
+        [selectedSourceId, sources]
+    );
     const pageCount = getPageCount(libraryItems.length, LIBRARY_PAGE_SIZE);
     const safeLibraryPage = Math.min(libraryPage, pageCount);
     const pagedLibraryItems = libraryItems.slice(
@@ -121,12 +149,13 @@ export function App(): React.JSX.Element
     {
         void runAction("resolve", async () =>
         {
-            const nextPlan = await resolveBook(input);
+            const nextPlan = await resolveBook(input, selectedSourceId);
             const resolvedBookId = nextPlan.book.bookId;
             const currentDownloadBookId = downloadJob?.book?.bookId;
             const currentTranslateBookId = translateJob?.book?.bookId;
 
             setPlan(nextPlan);
+            setSelectedSourceId(nextPlan.provider?.id ?? nextPlan.book.sourceId ?? selectedSourceId);
             if (currentDownloadBookId !== resolvedBookId)
             {
                 setDownloadJob(undefined);
@@ -147,7 +176,7 @@ export function App(): React.JSX.Element
         void runAction("download", async () =>
         {
             setTranslateJob(undefined);
-            setDownloadJob(await startDownload(input));
+            setDownloadJob(await startDownload(input, selectedSourceId));
         });
     };
 
@@ -318,16 +347,21 @@ export function App(): React.JSX.Element
                 <div className="mx-auto max-w-4xl space-y-8">
                     <section className="mb-12 space-y-4 text-center">
                         <h2 className="title-serif text-4xl font-black tracking-tight md:text-6xl">
-                            Tải truyện <span className="italic text-primary">Fanqie</span>
+                            Tải truyện <span className="italic text-primary">đa nguồn</span>
                         </h2>
                         <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
-                            Hỗ trợ tải bản gốc tiếng Trung, tự động dịch sang tiếng Việt và lưu trữ vào thư viện cá nhân.
+                            Hỗ trợ chọn Fanqie, Qidian, 69shu và các nguồn khác, đồng thời vẫn giữ luồng Fanqie hiện tại
+                            để tải bản gốc tiếng Trung, dịch tiếng Việt và lưu trữ vào thư viện cá nhân.
                         </p>
                     </section>
 
                     <NovelSearch
                         input={input}
+                        selectedSourceId={selectedSourceId}
+                        selectedSourceHint={selectedSource?.inputHint}
+                        sources={sources}
                         setInput={setInput}
+                        setSelectedSourceId={setSelectedSourceId}
                         onResolve={handleResolve}
                         busy={busy === "resolve"}
                         error={error}
@@ -363,6 +397,10 @@ export function App(): React.JSX.Element
                                                 {
                                                     format: "txt" as const,
                                                     url: jobFileUrl(downloadJob.id, "original", "txt")
+                                                },
+                                                {
+                                                    format: "epub" as const,
+                                                    url: jobFileUrl(downloadJob.id, "original", "epub")
                                                 }
                                             ]
                                             : undefined}
@@ -382,6 +420,10 @@ export function App(): React.JSX.Element
                                                 {
                                                     format: "txt",
                                                     url: jobFileUrl(translateJob.id, "translated", "txt")
+                                                },
+                                                {
+                                                    format: "epub",
+                                                    url: jobFileUrl(translateJob.id, "translated", "epub")
                                                 }
                                             ]
                                             : undefined}

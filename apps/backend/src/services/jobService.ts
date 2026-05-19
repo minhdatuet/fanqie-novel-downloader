@@ -29,6 +29,7 @@ import { LegacyService } from "./legacyService.js";
 import { type LibraryItem, LibraryService } from "./libraryService.js";
 import type { QuotaService } from "./quotaService.js";
 import { parseStoredChaptersFromText } from "../utils/chapterParsing.js";
+import { postProcessProgress, progress, workingProgress } from "../utils/jobProgress.js";
 import { TranslatorService } from "./translatorService.js";
 
 interface ChapterProgress
@@ -101,8 +102,9 @@ export class JobService
         void this.pumpQueuedJobsAsync();
     }
 
-    public async resolveBook(input: string): Promise<DownloadPlan>
+    public async resolveBook(input: string, sourceId?: string): Promise<DownloadPlan>
     {
+        void sourceId;
         const plan = this.config.legacyBridgeEnabled
             ? await this.legacy.resolveBook(input)
             : await this.fanqie.preparePlan(input);
@@ -127,8 +129,9 @@ export class JobService
         await this.legacy.warmUpAsync();
     }
 
-    public createDownloadJob(input: string, actorKey = "anonymous"): JobRecord
+    public createDownloadJob(input: string, actorKey = "anonymous", sourceId?: string): JobRecord
     {
+        void sourceId;
         const bookId = extractBookId(input);
 
         if (bookId)
@@ -364,9 +367,10 @@ export class JobService
     {
         try
         {
+            let lastProgressCurrent = 0;
             this.throwIfCancelled(jobId);
             this.update(jobId, {
-                progress: progress(0, 1, "Đang lấy thông tin truyện"),
+                progress: workingProgress(0, 1, "Đang lấy thông tin truyện"),
                 status: "running"
             });
 
@@ -376,23 +380,41 @@ export class JobService
             this.throwIfCancelled(jobId);
             this.update(jobId, {
                 book: translatedBook,
-                progress: progress(0, plan.chapters.length, "Đã lấy thông tin, bắt đầu tải bản gốc")
+                progress: workingProgress(0, plan.chapters.length, "Đã lấy thông tin, bắt đầu tải bản gốc")
             });
 
             const chapters = await this.fanqie.downloadPlan(plan, (state) =>
             {
                 this.throwIfCancelled(jobId);
+                if (state.current < lastProgressCurrent)
+                {
+                    return;
+                }
+
+                lastProgressCurrent = state.current;
                 this.update(jobId, {
-                    progress: progress(state.current, state.total, state.message)
+                    progress: workingProgress(state.current, state.total, state.message)
                 });
+            });
+            this.recordJobEvent(jobId, "info", "Đã tải xong chapter Fanqie", {
+                chapters: chapters.length
             });
 
             this.throwIfCancelled(jobId);
+            this.update(jobId, {
+                progress: postProcessProgress(chapters.length, "Đang ghi file TXT bản gốc")
+            });
             const originalPath = await this.artifacts.saveDownloadedBookAsync(
                 jobId,
                 plan.book,
                 chapters,
-                translatedBook
+                translatedBook,
+                (message) =>
+                {
+                    this.update(jobId, {
+                        progress: postProcessProgress(chapters.length, message)
+                    });
+                }
             );
             this.library.invalidate();
 
@@ -401,7 +423,7 @@ export class JobService
                     originalTxt: originalPath
                 },
                 outputFormat: "txt",
-                progress: progress(chapters.length, chapters.length, "Đã tải xong bản tiếng Trung"),
+                progress: progress(chapters.length + 1, chapters.length + 1, "Đã tải xong bản tiếng Trung"),
                 status: "completed"
             });
             this.recordJobEvent(jobId, "info", "Job tải đã hoàn tất", {
@@ -418,9 +440,10 @@ export class JobService
     {
         try
         {
+            let lastProgressCurrent = 0;
             this.throwIfCancelled(jobId);
             this.update(jobId, {
-                progress: progress(0, 1, "Đang khởi động lõi tải"),
+                progress: workingProgress(0, 1, "Đang khởi động lõi tải"),
                 status: "running"
             });
 
@@ -430,7 +453,7 @@ export class JobService
             this.throwIfCancelled(jobId);
             this.update(jobId, {
                 book: translatedBook,
-                progress: progress(0, translatedBook.chapterCount || 1, "Đã lấy thông tin truyện")
+                        progress: workingProgress(0, translatedBook.chapterCount || 1, "Đã lấy thông tin truyện")
             });
 
             const legacyJob = await this.legacy.createDownloadJob(input);
@@ -444,8 +467,17 @@ export class JobService
 
                 if (current)
                 {
+                    const mappedProgress = this.legacy.mapProgress(current);
+
+                    if (mappedProgress.current < lastProgressCurrent)
+                    {
+                        await sleep(1200);
+                        continue;
+                    }
+
+                    lastProgressCurrent = mappedProgress.current;
                     this.update(jobId, {
-                        progress: this.legacy.mapProgress(current)
+                        progress: workingProgress(mappedProgress.current, mappedProgress.total, mappedProgress.message)
                     });
 
                     if (current.title || current.author)
@@ -478,12 +510,24 @@ export class JobService
                         }
 
                         this.throwIfCancelled(jobId);
+                        this.update(jobId, {
+                            progress: postProcessProgress(chapters.length, "Đang ghi file TXT bản gốc")
+                        });
                         const savedOriginalPath = await this.artifacts.saveDownloadedBookAsync(
                             jobId,
                             plan.book,
                             chapters,
-                            translatedBook
+                            translatedBook,
+                            (message) =>
+                            {
+                                this.update(jobId, {
+                                    progress: postProcessProgress(chapters.length, message)
+                                });
+                            }
                         );
+                        this.recordJobEvent(jobId, "info", "Đã ghi file đầu ra", {
+                            output: savedOriginalPath
+                        });
                         this.library.invalidate();
 
                         this.update(jobId, {
@@ -491,7 +535,7 @@ export class JobService
                                 originalTxt: savedOriginalPath
                             },
                             outputFormat: "txt",
-                            progress: progress(chapters.length, chapters.length, "Đã tải xong bản tiếng Trung"),
+                            progress: progress(chapters.length + 1, chapters.length + 1, "Đã tải xong bản tiếng Trung"),
                             status: "completed"
                         });
                         this.recordJobEvent(jobId, "info", "Job tải đã hoàn tất", {
@@ -526,7 +570,7 @@ export class JobService
             }
 
             this.update(jobId, {
-                progress: progress(0, 1, "Đang đọc file tiếng Trung"),
+                progress: workingProgress(0, 1, "Đang đọc file tiếng Trung"),
                 status: "running"
             });
 
@@ -535,7 +579,7 @@ export class JobService
             source.book = translatedBook;
             this.update(jobId, {
                 book: translatedBook,
-                progress: progress(0, 1, "Đang dịch thông tin truyện")
+                progress: workingProgress(0, 1, "Đang dịch thông tin truyện")
             });
 
             const chapters = await this.artifacts.loadSourceChaptersAsync(source);
@@ -568,7 +612,7 @@ export class JobService
 
                     completedChapters += 1;
                     this.update(jobId, {
-                        progress: progress(
+                        progress: workingProgress(
                             completedChapters,
                             chapters.length,
                             `Đã dịch ${completedChapters}/${chapters.length} chương`
@@ -1057,19 +1101,6 @@ function extractBookId(input: string): string | undefined
     const target = urlMatch?.[0] ?? trimmed;
 
     return target.match(/(?:book_id|bookId)=([0-9]+)/i)?.[1] ?? target.match(/\/page\/(\d+)/)?.[1];
-}
-
-function progress(current: number, total: number, message: string): ProgressState
-{
-    const safeTotal = Math.max(1, total);
-    const safeCurrent = Math.min(Math.max(0, current), safeTotal);
-
-    return {
-        current: safeCurrent,
-        message,
-        percent: Math.round((safeCurrent / safeTotal) * 100),
-        total: safeTotal
-    };
 }
 
 function inferFormatFromFiles(files: JobRecord["files"]): DownloadFormat

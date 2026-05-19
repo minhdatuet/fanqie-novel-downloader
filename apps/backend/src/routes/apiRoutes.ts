@@ -8,6 +8,7 @@ import type { DatabaseService } from "../infra/db/database.js";
 import type { AuditLogService } from "../services/auditLogService.js";
 import type { JobService } from "../services/jobService.js";
 import type { LibraryService } from "../services/libraryService.js";
+import { getSourceCatalog } from "../services/sourceCatalog.js";
 import { SpamLimitError } from "../services/spamGuard.js";
 import type { RateLimitRule, SpamGuardService } from "../services/spamGuard.js";
 import { QuotaExceededError, type QuotaService } from "../services/quotaService.js";
@@ -29,6 +30,7 @@ interface ResolveBody
 {
     bookIdOrLink?: string;
     input?: string;
+    sourceId?: string;
 }
 
 interface DownloadBody
@@ -36,6 +38,7 @@ interface DownloadBody
     bookIdOrLink?: string;
     format?: "txt" | "epub";
     input?: string;
+    sourceId?: string;
 }
 
 interface JobIdParams
@@ -174,6 +177,10 @@ export async function registerApiRoutes(
         ok: true
     }));
 
+    app.get("/api/sources", async () => ({
+        items: getSourceCatalog()
+    }));
+
     app.get<{ Params: PreviewKeyParams }>(
         "/api/preview-cover/:key",
         {
@@ -217,6 +224,7 @@ export async function registerApiRoutes(
         async (request, reply) =>
         {
             const input = readInput(request.body);
+            const sourceId = readSourceId(request.body);
 
             if (!input)
             {
@@ -227,20 +235,22 @@ export async function registerApiRoutes(
                 {
                     action: "books.resolve",
                     ip: getClientIp(request),
-                    input
+                    input,
+                    sourceId
                 },
                 "Ghi nhận yêu cầu resolve"
             );
             await auditLogService.recordAsync({
                 action: "resolve_book",
                 data: {
-                    input
+                    input,
+                    sourceId
                 },
                 ip: getClientIp(request),
                 userAgent: getUserAgent(request)
             });
 
-            return jobService.resolveBook(input);
+            return jobService.resolveBook(input, sourceId);
         }
     );
 
@@ -255,6 +265,7 @@ export async function registerApiRoutes(
         async (request, reply) =>
         {
             const input = readInput(request.body);
+            const sourceId = readSourceId(request.body);
 
             if (!input)
             {
@@ -265,14 +276,16 @@ export async function registerApiRoutes(
                 {
                     action: "jobs.download",
                     ip: getClientIp(request),
-                    input
+                    input,
+                    sourceId
                 },
                 "Ghi nhận yêu cầu tạo job tải"
             );
             await auditLogService.recordAsync({
                 action: "create_download_job",
                 data: {
-                    input
+                    input,
+                    sourceId
                 },
                 ip: getClientIp(request),
                 userAgent: getUserAgent(request)
@@ -280,7 +293,7 @@ export async function registerApiRoutes(
 
             try
             {
-                return jobService.createDownloadJob(input, getClientIp(request));
+                return jobService.createDownloadJob(input, getClientIp(request), sourceId);
             }
             catch (error)
             {
@@ -823,6 +836,11 @@ function readInput(body: ResolveBody | DownloadBody | undefined): string | undef
     }
 
     return body.input?.trim() || body.bookIdOrLink?.trim();
+}
+
+function readSourceId(body: ResolveBody | DownloadBody | undefined): string | undefined
+{
+    return body?.sourceId?.trim() || undefined;
 }
 
 function prepareSse(reply: FastifyReply): void

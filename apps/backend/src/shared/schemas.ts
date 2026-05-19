@@ -22,6 +22,11 @@ export const inputBodySchema = {
             maxLength: INPUT_MAX_LENGTH,
             minLength: 1,
             type: "string"
+        },
+        sourceId: {
+            maxLength: 64,
+            minLength: 1,
+            type: "string"
         }
     },
     type: "object"
@@ -49,6 +54,11 @@ export const downloadBodySchema = {
         },
         input: {
             maxLength: INPUT_MAX_LENGTH,
+            minLength: 1,
+            type: "string"
+        },
+        sourceId: {
+            maxLength: 64,
             minLength: 1,
             type: "string"
         }
