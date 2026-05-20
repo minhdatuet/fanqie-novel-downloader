@@ -31,6 +31,43 @@ export function decodeHtmlEntities(input: string): string
         .replace(/&([a-z]+);/gi, (_, name: string) => ENTITY_MAP[name.toLowerCase()] ?? _);
 }
 
+function isAdOrRedundant(trimmed: string): boolean
+{
+    const lower = trimmed.toLowerCase();
+
+    if (
+        lower.includes("loadadv(") ||
+        lower.includes("pubfuture") ||
+        lower.includes("window.pubfuture") ||
+        lower.includes("pf-22965-1") ||
+        lower.includes("69shu") ||
+        lower.includes("69书吧") ||
+        lower.includes("69shuba")
+    )
+    {
+        return true;
+    }
+
+    if (
+        trimmed === "(本章完)" ||
+        trimmed === "（本章完）" ||
+        trimmed === "(本章完结)" ||
+        trimmed === "（本章完结）" ||
+        trimmed.includes("点击下载") ||
+        trimmed.includes("最新域名") ||
+        trimmed.includes("最新网址") ||
+        trimmed.includes("记住手机版网址") ||
+        trimmed.includes("请记住本书") ||
+        trimmed.includes("无广告") ||
+        trimmed.includes("www.35xs.co")
+    )
+    {
+        return true;
+    }
+
+    return false;
+}
+
 export function cleanPlainText(raw: string, title: string): string
 {
     const normalized = raw
@@ -55,6 +92,11 @@ export function cleanPlainText(raw: string, title: string): string
                 lastBlank = true;
             }
 
+            continue;
+        }
+
+        if (isAdOrRedundant(trimmed))
+        {
             continue;
         }
 

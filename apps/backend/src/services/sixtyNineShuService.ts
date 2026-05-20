@@ -247,7 +247,7 @@ export class SixtyNineShuService
 
             const workers = Array.from({ length: workerCount }, async () =>
             {
-                const page = await context.newPage();
+                let page = await context.newPage();
                 await page.addInitScript(() => {
                     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
                 });
@@ -261,16 +261,29 @@ export class SixtyNineShuService
 
                     let lastError: unknown;
                     let success = false;
+                    const maxAttempts = Math.max(6, this.config.maxRetries);
 
-                    for (let attempt = 0; attempt < this.config.maxRetries; attempt += 1)
+                    for (let attempt = 0; attempt < maxAttempts; attempt += 1)
                     {
                         try
                         {
+                            if (attempt > 0 && attempt % 2 === 0)
+                            {
+                                // Fresh page recreation on failure to bypass sticky Cloudflare blocks
+                                await page.close().catch(() => undefined);
+                                page = await context.newPage();
+                                await page.addInitScript(() => {
+                                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                                });
+                                // Add a polite pause to cool down
+                                await sleep(1500);
+                            }
+
                             await page.goto(`${BASE_URL}/txt/${bookId}/${chapter.id}`, {
                                 waitUntil: "domcontentloaded",
-                                timeout: 20000
+                                timeout: 25000
                             });
-                            await page.waitForSelector("div.txtnav", { timeout: 8000 });
+                            await page.waitForSelector("div.txtnav", { timeout: 10000 });
 
                             const html = await page.content();
                             if (
@@ -380,7 +393,9 @@ export class SixtyNineShuService
     {
         let lastError: unknown;
 
-        for (let attempt = 0; attempt < this.config.maxRetries; attempt += 1)
+        const maxAttempts = Math.max(6, this.config.maxRetries);
+
+        for (let attempt = 0; attempt < maxAttempts; attempt += 1)
         {
             try
             {
@@ -501,6 +516,9 @@ export class SixtyNineShuService
         if (containerHtml)
         {
             return containerHtml
+                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+                .replace(/<ins[^>]*>[\s\S]*?<\/ins>/gi, "")
                 .replace(/<h1[^>]*>[\s\S]*?<\/h1>/gi, "")
                 .replace(/<div[^>]*id="txtright"[^>]*>[\s\S]*?<\/div>/gi, "")
                 .replace(/<div[^>]*class="txtinfo"[^>]*>[\s\S]*?<\/div>/gi, "")
