@@ -52,6 +52,11 @@ export function formatSourceName(sourceId?: string): string
     return "69shu";
   }
 
+  if (normalized === "trxs")
+  {
+    return "trxs.cc";
+  }
+
   return sourceId;
 }
 

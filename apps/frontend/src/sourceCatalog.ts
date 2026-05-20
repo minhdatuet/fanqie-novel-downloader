@@ -24,6 +24,14 @@ export const DEFAULT_SOURCE_CATALOG: SourceInfo[] = [
         requiresAuth: false,
         supportsSearch: false,
         supportsTranslate: true
+    },
+    {
+        displayName: "trxs.cc",
+        id: "trxs",
+        inputHint: "Nhập link hoặc ID truyện trxs.cc",
+        requiresAuth: false,
+        supportsSearch: false,
+        supportsTranslate: true
     }
 ];
 

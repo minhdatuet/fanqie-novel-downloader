@@ -1,4 +1,4 @@
-﻿import { existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { createHash } from "node:crypto";
 import { randomUUID } from "node:crypto";
@@ -27,6 +27,7 @@ import { FanqieService } from "./fanqieService.js";
 import { LegacyOutputLocatorService } from "./legacyOutputLocatorService.js";
 import { LegacyService } from "./legacyService.js";
 import { SixtyNineShuService } from "./sixtyNineShuService.js";
+import { TrxsService } from "./trxsService.js";
 import { detectSourceIdFromInput, findSourceById } from "./sourceCatalog.js";
 import { type LibraryItem, LibraryService } from "./libraryService.js";
 import type { QuotaService } from "./quotaService.js";
@@ -58,6 +59,7 @@ export class JobService
     private readonly _legacyOutputLocator: LegacyOutputLocatorService;
     private readonly library: LibraryService;
     private readonly sixtyNineShu: SixtyNineShuService;
+    private readonly trxs: TrxsService;
     private activeTasks = 0;
     private readonly queueWorkerId = randomUUID();
     private readonly queueTimer: NodeJS.Timeout;
@@ -81,6 +83,7 @@ export class JobService
         this.fanqie = new FanqieService(config);
         this.legacy = new LegacyService(config);
         this.sixtyNineShu = new SixtyNineShuService(config);
+        this.trxs = new TrxsService(config);
         this.library = library ?? new LibraryService(config, database);
         this.artifacts = new JobArtifactService(config, database, this.library, (jobId) => this.getJob(jobId));
         this._legacyOutputLocator = new LegacyOutputLocatorService(this.library, () => this.legacy.getSaveDirAsync());
@@ -980,6 +983,8 @@ export class JobService
         {
             case "69shu":
                 return this.sixtyNineShu.preparePlan(input);
+            case "trxs":
+                return this.trxs.preparePlan(input);
             case "fanqie":
                 return this.config.legacyBridgeEnabled
                     ? this.legacy.resolveBook(input)
@@ -1000,6 +1005,8 @@ export class JobService
         {
             case "69shu":
                 return this.sixtyNineShu.downloadPlan(plan, onProgress);
+            case "trxs":
+                return this.trxs.downloadPlan(plan, onProgress);
             case "fanqie":
                 return this.fanqie.downloadPlan(plan, onProgress);
             default:
@@ -1064,6 +1071,8 @@ export class JobService
         {
             case "69shu":
                 return this.sixtyNineShu.parseBookId(input);
+            case "trxs":
+                return this.trxs.parseBookId(input);
             case "fanqie":
                 return this.fanqie.parseBookId(input);
             default:

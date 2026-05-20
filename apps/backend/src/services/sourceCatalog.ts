@@ -24,6 +24,14 @@ const SOURCE_CATALOG: SourceInfo[] = [
         requiresAuth: false,
         supportsSearch: false,
         supportsTranslate: true
+    },
+    {
+        displayName: "trxs.cc",
+        id: "trxs",
+        inputHint: "Nhập link hoặc ID truyện trxs.cc",
+        requiresAuth: false,
+        supportsSearch: false,
+        supportsTranslate: true
     }
 ];
 
@@ -81,8 +89,14 @@ export function detectSourceIdFromInput(input: string): string | undefined
         return "qidian";
     }
 
+    if (normalizedInput.includes("trxs.cc") || normalizedInput.includes("trxs"))
+    {
+        return "trxs";
+    }
+
     return undefined;
 }
+
 
 export function getSourceById(sourceId: string | undefined): SourceInfo | undefined
 {
