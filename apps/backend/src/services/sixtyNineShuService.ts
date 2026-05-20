@@ -11,7 +11,7 @@ const USER_AGENT =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
 const DEFAULT_SOURCE_ID = "69shu";
 const CHAPTER_REQUEST_INTERVAL_MS = 200; // Polite pause between chapter downloads
-const DOWNLOAD_WORKER_COUNT = 6; // Fast, concurrent downloads (500 chapters under 1.5 minutes)
+const DOWNLOAD_WORKER_COUNT = 3; // Fast, concurrent downloads (500 chapters under 1.5 minutes)
 const CURL_ACCEPT =
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,"
     + "application/signed-exchange;v=b3;q=0.7";

@@ -1,4 +1,4 @@
-export const BOOK_ID_PATTERN = "^\\d{8,30}$";
+export const BOOK_ID_PATTERN = "^[a-zA-Z0-9_:-]{1,100}$";
 export const INPUT_MAX_LENGTH = 500;
 export const QUERY_MAX_LENGTH = 100;
 
