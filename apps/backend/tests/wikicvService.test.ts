@@ -60,6 +60,9 @@ describe("WikicvService", () =>
         expect(service.parseBookId("/truyen/test-slug-456")).toBe("test-slug-456");
         // Dạng slug thuần
         expect(service.parseBookId("sam-nu-vu-XVOMz1S4CDGwJHSQ")).toBe("sam-nu-vu-XVOMz1S4CDGwJHSQ");
+        // Dạng chứa %7E / ~
+        expect(service.parseBookId("https://wikicv.net/truyen/chuyen-sinh-ngoc-huou-bao-ta-thanh-vai-c-aKmhBDzLci%7EBgs_n")).toBe("chuyen-sinh-ngoc-huou-bao-ta-thanh-vai-c-aKmhBDzLci~Bgs_n");
+        expect(service.parseBookId("chuyen-sinh-ngoc-huou-bao-ta-thanh-vai-c-aKmhBDzLci~Bgs_n")).toBe("chuyen-sinh-ngoc-huou-bao-ta-thanh-vai-c-aKmhBDzLci~Bgs_n");
         // Dạng không hợp lệ
         expect(service.parseBookId("https://wikicv.net/review/truyen")).toBeUndefined();
     });

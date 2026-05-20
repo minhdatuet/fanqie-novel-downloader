@@ -278,20 +278,29 @@ export class WikicvService
      */
     public parseBookId(input: string): string | undefined
     {
-        const trimmed = input.trim();
-        const urlMatch = trimmed.match(/\/truyen\/([a-zA-Z0-9_-]+)/i);
+        let decoded = input.trim();
+        try
+        {
+            decoded = decodeURIComponent(decoded);
+        }
+        catch (err)
+        {
+            // Ignore decoding error, proceed with original string
+        }
+
+        const urlMatch = decoded.match(/\/truyen\/([^/\s?#]+)/i);
         
         if (urlMatch?.[1])
         {
             return urlMatch[1];
         }
 
-        if (trimmed.includes("/") || trimmed.includes("."))
+        if (decoded.includes("/") || decoded.includes("."))
         {
             return undefined;
         }
 
-        return trimmed || undefined;
+        return decoded || undefined;
     }
 
     private async fetchChapterListAsync(
