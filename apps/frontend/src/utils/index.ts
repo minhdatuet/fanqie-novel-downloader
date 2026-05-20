@@ -57,6 +57,11 @@ export function formatSourceName(sourceId?: string): string
     return "trxs.cc";
   }
 
+  if (normalized === "wikicv")
+  {
+    return "Wikicv";
+  }
+
   return sourceId;
 }
 

@@ -32,6 +32,14 @@ export const DEFAULT_SOURCE_CATALOG: SourceInfo[] = [
         requiresAuth: false,
         supportsSearch: false,
         supportsTranslate: true
+    },
+    {
+        displayName: "Wikicv",
+        id: "wikicv",
+        inputHint: "Nhập link hoặc ID truyện wikicv.net",
+        requiresAuth: false,
+        supportsSearch: false,
+        supportsTranslate: false
     }
 ];
 

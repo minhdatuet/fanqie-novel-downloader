@@ -30,6 +30,12 @@ export class BookMetadataTranslationService
     public async translateBookMetadataAsync(book: BookInfo, jobId: string): Promise<BookInfo>
     {
         this._shouldCancel(jobId);
+
+        if (book.language === "vi")
+        {
+            return book;
+        }
+
         const cached = this._metadataCache.get(book.bookId);
 
         if (cached && cached.expiresAt > Date.now())

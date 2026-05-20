@@ -32,6 +32,14 @@ const SOURCE_CATALOG: SourceInfo[] = [
         requiresAuth: false,
         supportsSearch: false,
         supportsTranslate: true
+    },
+    {
+        displayName: "Wikicv",
+        id: "wikicv",
+        inputHint: "Nhập link hoặc ID truyện wikicv.net",
+        requiresAuth: false,
+        supportsSearch: false,
+        supportsTranslate: false
     }
 ];
 
@@ -92,6 +100,16 @@ export function detectSourceIdFromInput(input: string): string | undefined
     if (normalizedInput.includes("trxs.cc") || normalizedInput.includes("trxs"))
     {
         return "trxs";
+    }
+
+    if (
+        normalizedInput.includes("wikicv.net")
+        || normalizedInput.includes("wikicv")
+        || normalizedInput.includes("wikidich.net")
+        || normalizedInput.includes("wikidich")
+    )
+    {
+        return "wikicv";
     }
 
     return undefined;
