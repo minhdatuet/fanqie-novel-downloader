@@ -7,6 +7,8 @@ const CHAPTER_SEPARATOR = "----------------------------------------";
 const ENTITY_MAP: Record<string, string> = {
     amp: "&",
     apos: "'",
+    emsp: "　",
+    ensp: "　",
     gt: ">",
     lt: "<",
     nbsp: " ",

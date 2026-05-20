@@ -26,6 +26,8 @@ import { BookMetadataTranslationService } from "./bookMetadataTranslationService
 import { FanqieService } from "./fanqieService.js";
 import { LegacyOutputLocatorService } from "./legacyOutputLocatorService.js";
 import { LegacyService } from "./legacyService.js";
+import { SixtyNineShuService } from "./sixtyNineShuService.js";
+import { detectSourceIdFromInput, findSourceById } from "./sourceCatalog.js";
 import { type LibraryItem, LibraryService } from "./libraryService.js";
 import type { QuotaService } from "./quotaService.js";
 import { parseStoredChaptersFromText } from "../utils/chapterParsing.js";
@@ -55,6 +57,7 @@ export class JobService
     private readonly legacyJobMap = new Map<string, number>();
     private readonly _legacyOutputLocator: LegacyOutputLocatorService;
     private readonly library: LibraryService;
+    private readonly sixtyNineShu: SixtyNineShuService;
     private activeTasks = 0;
     private readonly queueWorkerId = randomUUID();
     private readonly queueTimer: NodeJS.Timeout;
@@ -77,6 +80,7 @@ export class JobService
         this.database = database;
         this.fanqie = new FanqieService(config);
         this.legacy = new LegacyService(config);
+        this.sixtyNineShu = new SixtyNineShuService(config);
         this.library = library ?? new LibraryService(config, database);
         this.artifacts = new JobArtifactService(config, database, this.library, (jobId) => this.getJob(jobId));
         this._legacyOutputLocator = new LegacyOutputLocatorService(this.library, () => this.legacy.getSaveDirAsync());
@@ -104,10 +108,8 @@ export class JobService
 
     public async resolveBook(input: string, sourceId?: string): Promise<DownloadPlan>
     {
-        void sourceId;
-        const plan = this.config.legacyBridgeEnabled
-            ? await this.legacy.resolveBook(input)
-            : await this.fanqie.preparePlan(input);
+        const selectedSourceId = this.resolveSourceId(input, sourceId);
+        const plan = await this.resolveDownloadPlanAsync(input, selectedSourceId);
         const book = await this.translateBookMetadataAsync(plan.book, plan.book.bookId);
 
         return {
@@ -131,12 +133,12 @@ export class JobService
 
     public createDownloadJob(input: string, actorKey = "anonymous", sourceId?: string): JobRecord
     {
-        void sourceId;
-        const bookId = extractBookId(input);
+        const selectedSourceId = this.resolveSourceId(input, sourceId);
+        const bookId = this.parseBookIdForSource(input, selectedSourceId);
 
         if (bookId)
         {
-            const activeJob = this.findActiveJobByBookId(bookId);
+            const activeJob = this.findActiveJobByBookKey(this.resolveBookKey(selectedSourceId, bookId));
 
             if (activeJob)
             {
@@ -144,7 +146,7 @@ export class JobService
             }
         }
 
-        const job = this.createJob("download", undefined, undefined, "txt", input, actorKey);
+        const job = this.createJob("download", undefined, undefined, "txt", input, actorKey, selectedSourceId);
 
         return job;
     }
@@ -163,11 +165,11 @@ export class JobService
             throw new Error("Không tìm thấy file tiếng Trung để dịch");
         }
 
-        const bookId = source.book?.bookId;
+        const bookKey = this.resolveJobBookKey(source);
 
-        if (bookId)
+        if (bookKey)
         {
-            const activeJob = this.findActiveJobByBookId(bookId);
+            const activeJob = this.findActiveJobByBookKey(bookKey);
 
             if (activeJob)
             {
@@ -175,7 +177,15 @@ export class JobService
             }
         }
 
-        const job = this.createJob("translate", source.book, sourceJobId, "txt", sourceJobId, actorKey);
+        const job = this.createJob(
+            "translate",
+            source.book,
+            sourceJobId,
+            "txt",
+            sourceJobId,
+            actorKey,
+            source.book?.sourceId ?? "fanqie"
+        );
         return job;
     }
 
@@ -186,7 +196,7 @@ export class JobService
             throw new Error("Truyện chưa có file tiếng Trung để dịch");
         }
 
-        const activeJob = this.findActiveJobByBookId(item.bookId);
+        const activeJob = this.findActiveJobByBookKey(this.resolveBookKey(item.sourceId, item.bookId));
 
         if (activeJob)
         {
@@ -200,7 +210,8 @@ export class JobService
             `library:${item.bookId}`,
             outputFormat,
             item.bookId,
-            actorKey
+            actorKey,
+            item.sourceId ?? "fanqie"
         );
 
         return job;
@@ -363,7 +374,7 @@ export class JobService
         return this.createTranslateJob(job.sourceJobId, actorKey);
     }
 
-    private async runDownloadJob(jobId: string, input: string): Promise<void>
+    private async runDownloadJob(jobId: string, input: string, sourceId?: string): Promise<void>
     {
         try
         {
@@ -374,7 +385,8 @@ export class JobService
                 status: "running"
             });
 
-            const plan = await this.fanqie.preparePlan(input);
+            const selectedSourceId = this.resolveSourceId(input, sourceId);
+            const plan = await this.resolveDownloadPlanAsync(input, selectedSourceId);
             this.throwIfCancelled(jobId);
             const translatedBook = await this.translateBookMetadataAsync(plan.book, jobId);
             this.throwIfCancelled(jobId);
@@ -383,7 +395,8 @@ export class JobService
                 progress: workingProgress(0, plan.chapters.length, "Đã lấy thông tin, bắt đầu tải bản gốc")
             });
 
-            const chapters = await this.fanqie.downloadPlan(plan, (state) =>
+            const providerName = plan.provider?.id ?? selectedSourceId;
+            const chapters = await this.downloadPlanAsync(plan, (state) =>
             {
                 this.throwIfCancelled(jobId);
                 if (state.current < lastProgressCurrent)
@@ -396,7 +409,7 @@ export class JobService
                     progress: workingProgress(state.current, state.total, state.message)
                 });
             });
-            this.recordJobEvent(jobId, "info", "Đã tải xong chapter Fanqie", {
+            this.recordJobEvent(jobId, "info", `Đã tải xong chapter ${providerName}`, {
                 chapters: chapters.length
             });
 
@@ -687,7 +700,8 @@ export class JobService
         sourceJobId?: string,
         outputFormat?: DownloadFormat,
         input?: string,
-        actorKey = "anonymous"
+        actorKey = "anonymous",
+        sourceId?: string
     ): JobRecord
     {
         this.quotaService?.consume(actorKey, {
@@ -706,6 +720,7 @@ export class JobService
             input,
             outputFormat,
             progress: progress(0, 1, "Đang xếp hàng"),
+            sourceId,
             sourceJobId,
             status: "queued",
             updatedAt: now
@@ -881,13 +896,15 @@ export class JobService
 
         if (job.kind === "download")
         {
-            if (this.config.legacyBridgeEnabled)
+            const sourceId = this.resolveSourceId(job.input ?? "", job.sourceId);
+
+            if (sourceId === "fanqie" && this.config.legacyBridgeEnabled)
             {
                 await this.runLegacyDownloadJob(job.id, job.input ?? "");
                 return;
             }
 
-            await this.runDownloadJob(job.id, job.input ?? "");
+            await this.runDownloadJob(job.id, job.input ?? "", sourceId);
             return;
         }
 
@@ -957,24 +974,101 @@ export class JobService
         return source;
     }
 
-    private findActiveJobByBookId(bookId: string): JobRecord | undefined
+    private async resolveDownloadPlanAsync(input: string, sourceId: string): Promise<DownloadPlan>
+    {
+        switch (sourceId)
+        {
+            case "69shu":
+                return this.sixtyNineShu.preparePlan(input);
+            case "fanqie":
+                return this.config.legacyBridgeEnabled
+                    ? this.legacy.resolveBook(input)
+                    : this.fanqie.preparePlan(input);
+            default:
+                throw new Error(`Nguồn chưa được hỗ trợ: ${sourceId}`);
+        }
+    }
+
+    private async downloadPlanAsync(
+        plan: DownloadPlan,
+        onProgress: (state: ChapterProgress) => void
+    ): Promise<StoredChapter[]>
+    {
+        const sourceId = plan.book.sourceId ?? this.resolveSourceId(plan.book.originalUrl ?? "", plan.provider?.id);
+
+        switch (sourceId)
+        {
+            case "69shu":
+                return this.sixtyNineShu.downloadPlan(plan, onProgress);
+            case "fanqie":
+                return this.fanqie.downloadPlan(plan, onProgress);
+            default:
+                throw new Error(`Nguồn chưa được hỗ trợ: ${sourceId}`);
+        }
+    }
+
+    private findActiveJobByBookKey(bookKey: string): JobRecord | undefined
     {
         for (const job of this.jobs.values())
         {
-            const jobBookId = this.resolveJobBookId(job);
+            const jobBookKey = this.resolveJobBookKey(job);
 
-            if (jobBookId === bookId && (job.status === "queued" || job.status === "running"))
+            if (jobBookKey === bookKey && (job.status === "queued" || job.status === "running"))
             {
                 return job;
             }
         }
 
-        return this.database?.findActiveJobByBookId(bookId);
+        return this.database?.findActiveJobByBookId(bookKey);
     }
 
-    private resolveJobBookId(job: JobRecord): string | undefined
+    private resolveJobBookKey(job: JobRecord): string | undefined
     {
-        return job.book?.bookId ?? extractBookId(job.input ?? "") ?? extractBookId(job.sourceJobId ?? "");
+        const bookId = job.book?.sourceBookId
+            ?? job.book?.bookId
+            ?? this.parseBookIdForSource(job.input ?? "", job.sourceId)
+            ?? extractBookId(job.sourceJobId ?? "");
+        const sourceId = job.book?.sourceId
+            ?? job.sourceId
+            ?? detectSourceIdFromInput(job.input ?? "")
+            ?? "fanqie";
+
+        if (!bookId)
+        {
+            return undefined;
+        }
+
+        return this.resolveBookKey(sourceId, bookId);
+    }
+
+    private resolveSourceId(input: string, sourceId?: string): string
+    {
+        const normalizedSourceId = sourceId?.trim().toLowerCase();
+
+        if (normalizedSourceId && findSourceById(normalizedSourceId))
+        {
+            return normalizedSourceId;
+        }
+
+        return detectSourceIdFromInput(input) ?? "fanqie";
+    }
+
+    private resolveBookKey(sourceId: string | undefined, bookId: string): string
+    {
+        return `${(sourceId ?? "fanqie").trim().toLowerCase()}:${bookId}`;
+    }
+
+    private parseBookIdForSource(input: string, sourceId?: string): string | undefined
+    {
+        switch (sourceId)
+        {
+            case "69shu":
+                return this.sixtyNineShu.parseBookId(input);
+            case "fanqie":
+                return this.fanqie.parseBookId(input);
+            default:
+                return extractBookId(input);
+        }
     }
 
     private isCancellationRequested(jobId: string): boolean

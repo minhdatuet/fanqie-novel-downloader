@@ -31,6 +31,7 @@ export interface ChapterRef
 {
     id: string;
     title: string;
+    url?: string;
 }
 
 export interface DownloadPlan
@@ -63,6 +64,7 @@ export interface JobRecord
         percent: number;
         total: number;
     };
+    sourceId?: string;
     sourceJobId?: string;
     status: "queued" | "running" | "completed" | "failed" | "canceled";
     updatedAt: string;

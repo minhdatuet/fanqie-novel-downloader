@@ -72,6 +72,7 @@ interface DbJobRow
     progress_current: number | null;
     progress_message: string | null;
     progress_total: number | null;
+    source_id: string | null;
     source_job_id: string | null;
     type: string;
     started_at: string | null;
@@ -452,18 +453,20 @@ export class DatabaseService
         return rows.map((row) => this.mapJob(row, this.loadBook(row.book_id), this.loadJobFiles(row.id)));
     }
 
-    public findActiveJobByBookId(bookId: string): JobRecord | undefined
+    public findActiveJobByBookId(bookKey: string): JobRecord | undefined
     {
+        const [sourceId, bookId] = splitBookKey(bookKey);
         const row = this.db.prepare(
             `
             SELECT *
             FROM jobs
             WHERE book_id = ?
+              AND COALESCE(source_id, 'fanqie') = ?
               AND status IN ('queued', 'running')
             ORDER BY updated_at DESC, created_at DESC
             LIMIT 1
             `
-        ).get(bookId) as DbJobRow | undefined;
+        ).get(bookId, sourceId) as DbJobRow | undefined;
 
         if (!row)
         {
@@ -484,6 +487,7 @@ export class DatabaseService
                 id,
                 user_id,
                 book_id,
+                source_id,
                 type,
                 status,
                 priority,
@@ -507,6 +511,7 @@ export class DatabaseService
                 @id,
                 @user_id,
                 @book_id,
+                @source_id,
                 @type,
                 @status,
                 @priority,
@@ -530,6 +535,7 @@ export class DatabaseService
             ON CONFLICT(id) DO UPDATE SET
                 user_id = excluded.user_id,
                 book_id = excluded.book_id,
+                source_id = excluded.source_id,
                 type = excluded.type,
                 status = excluded.status,
                 priority = excluded.priority,
@@ -566,6 +572,7 @@ export class DatabaseService
             progress_current: progress.current,
             progress_message: progress.message,
             progress_total: progress.total,
+            source_id: job.sourceId ?? job.book?.sourceId ?? null,
             source_job_id: job.sourceJobId ?? null,
             started_at: job.status === "running" ? job.updatedAt : null,
             status: job.status,
@@ -789,6 +796,7 @@ export class DatabaseService
                 id TEXT PRIMARY KEY,
                 user_id TEXT,
                 book_id TEXT,
+                source_id TEXT,
                 type TEXT NOT NULL,
                 status TEXT NOT NULL,
                 priority INTEGER,
@@ -839,6 +847,7 @@ export class DatabaseService
         `);
 
         this.ensureColumn("jobs", "files_json", "TEXT");
+        this.ensureColumn("jobs", "source_id", "TEXT");
     }
 
     private listBookFiles(bookId: string): DbBookFileRow[]
@@ -957,6 +966,7 @@ export class DatabaseService
                 row.progress_message ?? "",
                 row.status as JobStatus
             ),
+            sourceId: row.source_id ?? undefined,
             sourceJobId: row.source_job_id ?? undefined,
             status: row.status as JobRecord["status"],
             updatedAt: row.updated_at
@@ -1023,4 +1033,20 @@ function extractBookIdFromJobInput(input?: string): string | undefined
     const target = urlMatch?.[0] ?? trimmed;
 
     return target.match(/(?:book_id|bookId)=([0-9]+)/i)?.[1] ?? target.match(/\/page\/(\d+)/)?.[1];
+}
+
+function splitBookKey(bookKey: string): [string, string]
+{
+    const normalized = bookKey.trim().toLowerCase();
+    const separatorIndex = normalized.indexOf(":");
+
+    if (separatorIndex <= 0)
+    {
+        return ["fanqie", normalized];
+    }
+
+    return [
+        normalized.slice(0, separatorIndex),
+        normalized.slice(separatorIndex + 1)
+    ];
 }

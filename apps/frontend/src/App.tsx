@@ -20,6 +20,7 @@ import { JobStatus } from "./components/JobStatus";
 import { Layout } from "./components/Layout";
 import { LibraryTable } from "./components/LibraryTable";
 import { NovelSearch } from "./components/NovelSearch";
+import { DEFAULT_SOURCE_CATALOG } from "./sourceCatalog";
 import { getPageCount, getPageForBook, parseBookId } from "./utils";
 
 const LIBRARY_PAGE_SIZE = 20;
@@ -55,7 +56,7 @@ export function App(): React.JSX.Element
             try
             {
                 const data = await getSources();
-                setSources(data.items);
+                setSources(data.items.length > 0 ? data.items : DEFAULT_SOURCE_CATALOG);
 
                 if (data.items.length > 0 && !data.items.some((item) => item.id === selectedSourceId))
                 {
@@ -64,7 +65,7 @@ export function App(): React.JSX.Element
             }
             catch
             {
-                setSources([]);
+                setSources(DEFAULT_SOURCE_CATALOG);
             }
         });
     }, []);

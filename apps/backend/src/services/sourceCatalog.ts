@@ -23,7 +23,7 @@ const SOURCE_CATALOG: SourceInfo[] = [
         inputHint: "Nhập link hoặc ID truyện 69shu",
         requiresAuth: false,
         supportsSearch: false,
-        supportsTranslate: false
+        supportsTranslate: true
     }
 ];
 
@@ -50,4 +50,41 @@ export function findSourceById(sourceId: string | undefined): SourceInfo | undef
     }
 
     return SOURCE_CATALOG.find((item) => item.id === normalizedSourceId);
+}
+
+export function detectSourceIdFromInput(input: string): string | undefined
+{
+    const normalizedInput = input.trim().toLowerCase();
+
+    if (!normalizedInput)
+    {
+        return undefined;
+    }
+
+    if (normalizedInput.includes("fanqienovel.com") || normalizedInput.includes("fanqie"))
+    {
+        return "fanqie";
+    }
+
+    if (
+        normalizedInput.includes("69shuba.com")
+        || normalizedInput.includes("69shuba.cx")
+        || normalizedInput.includes("69xinshu.com")
+        || normalizedInput.includes("69shu")
+    )
+    {
+        return "69shu";
+    }
+
+    if (normalizedInput.includes("qidian.com") || normalizedInput.includes("qidian"))
+    {
+        return "qidian";
+    }
+
+    return undefined;
+}
+
+export function getSourceById(sourceId: string | undefined): SourceInfo | undefined
+{
+    return findSourceById(sourceId);
 }

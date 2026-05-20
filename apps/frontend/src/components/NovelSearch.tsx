@@ -2,6 +2,7 @@ import React from "react";
 import { Loader2, Search } from "lucide-react";
 
 import type { SourceInfo } from "../types";
+import { DEFAULT_SOURCE_CATALOG } from "../sourceCatalog";
 import { Button } from "./ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/Card";
 import { Input } from "./ui/Input";
@@ -33,7 +34,8 @@ export function NovelSearch(
     }: NovelSearchProps
 ): React.JSX.Element
 {
-    const selectedSource = sources.find((item) => item.id === selectedSourceId);
+    const catalog = sources.length > 0 ? sources : DEFAULT_SOURCE_CATALOG;
+    const selectedSource = catalog.find((item) => item.id === selectedSourceId);
 
     return (
         <Card className="glass overflow-hidden">
@@ -62,8 +64,7 @@ export function NovelSearch(
                                 onChange={(event) => setSelectedSourceId(event.target.value)}
                                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             >
-                                {sources.length === 0 && <option value="fanqie">Fanqie</option>}
-                                {sources.map((source) => (
+                                {catalog.map((source) => (
                                     <option key={source.id} value={source.id}>
                                         {source.displayName}
                                     </option>

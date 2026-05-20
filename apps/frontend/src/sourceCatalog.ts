@@ -1,0 +1,40 @@
+import type { SourceInfo } from "./types";
+
+export const DEFAULT_SOURCE_CATALOG: SourceInfo[] = [
+    {
+        displayName: "Fanqie",
+        id: "fanqie",
+        inputHint: "Nhập link fanqienovel.com/page/... hoặc Book ID Fanqie",
+        requiresAuth: false,
+        supportsSearch: false,
+        supportsTranslate: true
+    },
+    {
+        displayName: "Qidian",
+        id: "qidian",
+        inputHint: "Nhập link hoặc ID truyện Qidian",
+        requiresAuth: false,
+        supportsSearch: false,
+        supportsTranslate: false
+    },
+    {
+        displayName: "69shu",
+        id: "69shu",
+        inputHint: "Nhập link hoặc ID truyện 69shu",
+        requiresAuth: false,
+        supportsSearch: false,
+        supportsTranslate: true
+    }
+];
+
+export function getFallbackSourceById(sourceId: string | undefined): SourceInfo
+{
+    const normalizedSourceId = sourceId?.trim().toLowerCase();
+
+    if (!normalizedSourceId)
+    {
+        return DEFAULT_SOURCE_CATALOG[0]!;
+    }
+
+    return DEFAULT_SOURCE_CATALOG.find((item) => item.id === normalizedSourceId) ?? DEFAULT_SOURCE_CATALOG[0]!;
+}

@@ -35,6 +35,7 @@ export interface ChapterRef
 {
     id: string;
     title: string;
+    url?: string;
 }
 
 export interface DownloadPlan
@@ -74,6 +75,7 @@ export interface JobRecord
     input?: string;
     outputFormat?: DownloadFormat;
     progress: ProgressState;
+    sourceId?: string;
     sourceJobId?: string;
     status: JobStatus;
     updatedAt: string;
