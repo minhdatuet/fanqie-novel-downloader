@@ -437,12 +437,11 @@ export class JobService
             );
             this.library.invalidate();
 
+            const isVi = plan.book.language === "vi";
             this.update(jobId, {
-                files: {
-                    originalTxt: originalPath
-                },
+                files: isVi ? { translatedTxt: originalPath } : { originalTxt: originalPath },
                 outputFormat: "txt",
-                progress: progress(chapters.length + 1, chapters.length + 1, "Đã tải xong bản tiếng Trung"),
+                progress: progress(chapters.length + 1, chapters.length + 1, isVi ? "Đã tải xong bản tiếng Việt" : "Đã tải xong bản tiếng Trung"),
                 status: "completed"
             });
             this.recordJobEvent(jobId, "info", "Job tải đã hoàn tất", {
@@ -549,12 +548,11 @@ export class JobService
                         });
                         this.library.invalidate();
 
+                        const isVi = plan.book.language === "vi";
                         this.update(jobId, {
-                            files: {
-                                originalTxt: savedOriginalPath
-                            },
+                            files: isVi ? { translatedTxt: savedOriginalPath } : { originalTxt: savedOriginalPath },
                             outputFormat: "txt",
-                            progress: progress(chapters.length + 1, chapters.length + 1, "Đã tải xong bản tiếng Trung"),
+                            progress: progress(chapters.length + 1, chapters.length + 1, isVi ? "Đã tải xong bản tiếng Việt" : "Đã tải xong bản tiếng Trung"),
                             status: "completed"
                         });
                         this.recordJobEvent(jobId, "info", "Job tải đã hoàn tất", {

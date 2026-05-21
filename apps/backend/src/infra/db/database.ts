@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { relative, resolve } from "node:path";
@@ -848,6 +848,7 @@ export class DatabaseService
 
         this.ensureColumn("jobs", "files_json", "TEXT");
         this.ensureColumn("jobs", "source_id", "TEXT");
+        this.migrateLegacyVietnameseBooks();
     }
 
     private listBookFiles(bookId: string): DbBookFileRow[]
@@ -892,7 +893,7 @@ export class DatabaseService
             description: book.description ?? undefined,
             hasOriginal: originalFiles.length > 0,
             hasTranslated: translatedFiles.length > 0,
-            language: "zh",
+            language: (sourceId === "wikicv" || sourceId === "sangtacviet") ? "vi" : "zh",
             originalPath: absolute(originalTxt?.relative_path ?? originalEpub?.relative_path),
             relativeDir: bestFile
                 ? relative(this.dataDir, resolve(this.dataDir, bestFile.relative_path)).replace(/\\/g, "/")
@@ -918,7 +919,7 @@ export class DatabaseService
             coverUrl: row.cover_url ?? undefined,
             description: row.description ?? undefined,
             finished: row.finished === null ? undefined : Boolean(row.finished),
-            language: "zh",
+            language: (sourceId === "wikicv" || sourceId === "sangtacviet") ? "vi" : "zh",
             originalUrl: undefined,
             sourceBookId: row.id,
             sourceId,
@@ -983,6 +984,100 @@ export class DatabaseService
         }
 
         this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
+    }
+
+    private migrateLegacyVietnameseBooks(): void
+    {
+        try
+        {
+            // Find all books from wikicv or sangtacviet
+            const books = this.db.prepare(
+                `SELECT id, source FROM books WHERE source = 'wikicv' OR source = 'sangtacviet'`
+            ).all() as unknown as { id: string; source: string }[];
+
+            for (const book of books)
+            {
+                // Find all original files for this book
+                const originalFiles = this.db.prepare(
+                    `SELECT id, format, relative_path FROM book_files WHERE book_id = ? AND kind = 'original'`
+                ).all(book.id) as unknown as Array<{ id: string; format: string; relative_path: string }>;
+
+                for (const file of originalFiles)
+                {
+                    const oldRelativePath = file.relative_path;
+                    const oldAbsolutePath = resolve(this.dataDir, oldRelativePath);
+                    
+                    let newRelativePath = oldRelativePath;
+                    if (file.format === "txt" && oldRelativePath.endsWith("original.txt"))
+                    {
+                        newRelativePath = oldRelativePath.replace("original.txt", "translated.txt");
+                    }
+                    else if (file.format === "epub" && oldRelativePath.endsWith("original.epub"))
+                    {
+                        newRelativePath = oldRelativePath.replace("original.epub", "translated_vi.epub");
+                    }
+                    else if (file.format === "epub" && oldRelativePath.endsWith("original_vi.epub"))
+                    {
+                        newRelativePath = oldRelativePath.replace("original_vi.epub", "translated_vi.epub");
+                    }
+
+                    const newAbsolutePath = resolve(this.dataDir, newRelativePath);
+
+                    // If the old file exists and the new one doesn't, rename it
+                    if (oldAbsolutePath !== newAbsolutePath && existsSync(oldAbsolutePath))
+                    {
+                        try
+                        {
+                            renameSync(oldAbsolutePath, newAbsolutePath);
+                        }
+                        catch (err)
+                        {
+                            // Ignore or log error
+                        }
+                    }
+
+                    // Update database record
+                    this.db.prepare(
+                        `UPDATE book_files SET kind = 'translated', relative_path = ? WHERE id = ?`
+                    ).run(newRelativePath, file.id);
+                }
+
+                // Also update any jobs for this book
+                const jobs = this.db.prepare(
+                    `SELECT id, files_json FROM jobs WHERE book_id = ? AND (source_id = 'wikicv' OR source_id = 'sangtacviet')`
+                ).all(book.id) as unknown as Array<{ id: string; files_json: string | null }>;
+
+                for (const job of jobs)
+                {
+                    if (job.files_json)
+                    {
+                        try
+                        {
+                            const files = JSON.parse(job.files_json) as Record<string, string>;
+                            if (files.originalTxt)
+                            {
+                                const oldPath = files.originalTxt;
+                                const newPath = oldPath.replace("original.txt", "translated.txt");
+                                files.translatedTxt = newPath;
+                                delete files.originalTxt;
+                                
+                                this.db.prepare(
+                                    `UPDATE jobs SET files_json = ? WHERE id = ?`
+                                ).run(JSON.stringify(files), job.id);
+                            }
+                        }
+                        catch (err)
+                        {
+                            // ignore json parse issues
+                        }
+                    }
+                }
+            }
+        }
+        catch (error)
+        {
+            console.error("Lỗi khi di chuyển sách tiếng Việt cũ:", error);
+        }
     }
 }
 

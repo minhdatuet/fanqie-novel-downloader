@@ -149,8 +149,9 @@ export class JobArtifactService
         onStage?: (message: string) => void
     ): Promise<string>
     {
+        const isVi = bookForFile.language === "vi";
         const bookDir = resolve(this.config.dataDir, "books", bookForFile.bookId);
-        const originalTxt = resolve(bookDir, "original.txt");
+        const targetTxt = resolve(bookDir, isVi ? "translated.txt" : "original.txt");
         const content = composeNovelText(
             bookForFile.bookId,
             bookForFile.title,
@@ -158,16 +159,16 @@ export class JobArtifactService
             bookForFile.description,
             bookForFile.tags,
             chapters,
-            false
+            isVi
         );
 
-        onStage?.("Đang ghi file TXT bản gốc");
-        await this.writeTextArtifactAsync(jobId, originalTxt, content);
+        onStage?.(`Đang ghi file TXT bản ${isVi ? "dịch" : "gốc"}`);
+        await this.writeTextArtifactAsync(jobId, targetTxt, content);
         onStage?.("Đang ghi dữ liệu chương");
         await this.writeChaptersJsonAsync(bookDir, chapters);
 
         onStage?.("Đang kiểm tra file và cập nhật thư viện");
-        const artifact = await this.buildArtifactAsync(originalTxt);
+        const artifact = await this.buildArtifactAsync(targetTxt);
         const updatedAt = new Date().toISOString();
 
         this.database?.upsertLibraryItem({
@@ -176,11 +177,12 @@ export class JobArtifactService
             canonicalBookKey: libraryBook?.canonicalBookKey ?? bookForFile.canonicalBookKey,
             coverUrl: libraryBook?.coverUrl ?? bookForFile.coverUrl,
             description: libraryBook?.description ?? bookForFile.description,
-            hasOriginal: true,
-            hasTranslated: false,
+            hasOriginal: !isVi,
+            hasTranslated: isVi,
             language: libraryBook?.language ?? bookForFile.language,
-            originalPath: originalTxt,
-            relativeDir: dirname(originalTxt),
+            originalPath: isVi ? undefined : targetTxt,
+            translatedPath: isVi ? targetTxt : undefined,
+            relativeDir: dirname(targetTxt),
             sourceBookId: libraryBook?.sourceBookId ?? bookForFile.sourceBookId ?? bookForFile.bookId,
             sourceId: libraryBook?.sourceId ?? bookForFile.sourceId ?? "fanqie",
             tags: libraryBook?.tags ?? bookForFile.tags,
@@ -193,13 +195,13 @@ export class JobArtifactService
             chapterCount: chapters.length,
             createdByJobId: jobId,
             format: "txt",
-            kind: "original",
-            path: originalTxt,
+            kind: isVi ? "translated" : "original",
+            path: targetTxt,
             sha256: artifact.sha256,
             sizeBytes: artifact.sizeBytes
         });
 
-        return originalTxt;
+        return targetTxt;
     }
 
     /**
