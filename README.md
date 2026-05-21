@@ -77,6 +77,7 @@ Riêng Fanqie có thêm luồng legacy để đảm bảo tương thích với n
 ## Cấu Hình Quan Trọng
 
 File cấu hình mẫu nằm ở `.env.example`.
+Backend tự nạp `.env` từ workspace root hoặc thư mục hiện tại khi khởi động, nên chỉ cần đặt file đúng chỗ.
 
 ### Biến môi trường đáng chú ý
 

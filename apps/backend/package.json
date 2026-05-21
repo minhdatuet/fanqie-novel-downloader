@@ -5,9 +5,9 @@
     "type": "module",
     "scripts": {
         "build": "tsc -p tsconfig.json",
-        "dev": "node --env-file-if-exists=../../.env --watch --import tsx src/server.ts",
+        "dev": "node --watch --import tsx src/server.ts",
         "test": "vitest run",
-        "start": "node --env-file-if-exists=.env --env-file-if-exists=../../.env dist/server.js"
+        "start": "node dist/server.js"
     },
     "dependencies": {
         "@fastify/cors": "^10.0.1",

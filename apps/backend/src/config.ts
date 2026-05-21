@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 
@@ -67,6 +67,67 @@ function workspaceRoot(): string
     return cwd;
 }
 
+function loadEnvironmentFile(filePath: string): void
+{
+    if (!existsSync(filePath))
+    {
+        return;
+    }
+
+    const content = readFileSync(filePath, "utf8");
+    const lines = content.split(/\r?\n/);
+
+    for (const line of lines)
+    {
+        const trimmedLine = line.trim();
+
+        if (!trimmedLine || trimmedLine.startsWith("#"))
+        {
+            continue;
+        }
+
+        const equalsIndex = trimmedLine.indexOf("=");
+
+        if (equalsIndex < 0)
+        {
+            continue;
+        }
+
+        const key = trimmedLine.slice(0, equalsIndex).trim();
+        let value = trimmedLine.slice(equalsIndex + 1).trim();
+
+        if (!key || process.env[key] !== undefined)
+        {
+            continue;
+        }
+
+        if (
+            (value.startsWith('"') && value.endsWith('"'))
+            || (value.startsWith("'") && value.endsWith("'"))
+        )
+        {
+            value = value.slice(1, -1);
+        }
+
+        process.env[key] = value;
+    }
+}
+
+function loadEnvironmentFromCandidates(): void
+{
+    const root = workspaceRoot();
+    const candidates = [
+        resolve(process.cwd(), ".env"),
+        resolve(root, ".env"),
+        resolve(root, "apps", "backend", ".env")
+    ];
+
+    for (const candidate of candidates)
+    {
+        loadEnvironmentFile(candidate);
+    }
+}
+
 function resolveFromRoot(path: string): string
 {
     if (/^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("/") || path.startsWith("\\\\"))
@@ -116,6 +177,8 @@ function readEndpoints(): string[]
 
 export function loadConfig(): AppConfig
 {
+    loadEnvironmentFromCandidates();
+
     const translationProvider = process.env.TRANSLATION_PROVIDER === "mock" ? "mock" : "stv";
     const legacyConfigSource = process.env.LEGACY_CONFIG_SOURCE
         ?? "D:\\Novel\\Fanqie\\Tomato-Novel-Downloader\\config.yml";
