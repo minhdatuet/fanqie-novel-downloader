@@ -61,10 +61,14 @@ npm run legacy:start
 - `MAX_WORKERS`: số worker cho downloader TypeScript fallback khi không dùng legacy bridge. Mặc định `12`.
 - `LEGACY_BRIDGE`: mặc định `true`; backend mới dùng exe gốc ở port `LEGACY_PORT`.
 - `LEGACY_EXE_PATH` hoặc `LEGACY_EXE_SOURCE`: đường dẫn exe gốc.
+- Trên Linux, legacy binary phải lấy từ release của `zhongbai2333/Tomato-Novel-Downloader` và đặt tại
+  `/opt/fanqie-legacy/tomato-novel-downloader`.
 - `LEGACY_PORT`: port backend exe gốc cho bridge, mặc định `18424`.
 - `LEGACY_WEB_ADDR`: port Web UI cũ nếu chạy `npm run legacy:start`, mặc định `127.0.0.1:18423`.
 - `TRANSLATION_PROVIDER`: mặc định `stv`; chỉ đặt `mock` khi cần test UI không gọi STV.
 - `STV_API_URL`: mặc định `https://comic.sangtacvietcdn.xyz/tsm.php`.
+- `FANQIE_API_ENDPOINTS`: danh sách endpoint `batch_full` phân tách bằng dấu phẩy. Mặc định dùng pool
+  `api5-normal-sinfonlinea/b/c` và `api5-normal.fqnovel.com` để tránh rơi về `use_official_api=true` khi deploy.
 - `DATA_DIR`: nơi lưu truyện tải về và file dịch.
 
 ## Về Batch 25 Chương

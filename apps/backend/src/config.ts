@@ -14,6 +14,12 @@ const DEFAULT_TRANSLATION_PARAGRAPH_BATCH_PAUSE_MS = 200;
 const DEFAULT_TRANSLATION_PARAGRAPH_BATCH_SIZE = 20;
 const DEFAULT_TRANSLATION_SINGLE_PARAGRAPH_PAUSE_MS = 80;
 const DEFAULT_DAILY_JOB_QUOTA = 20;
+const DEFAULT_FANQIE_API_ENDPOINTS = [
+    "https://api5-normal-sinfonlinea.fqnovel.com",
+    "https://api5-normal-sinfonlineb.fqnovel.com",
+    "https://api5-normal-sinfonlinec.fqnovel.com",
+    "https://api5-normal.fqnovel.com"
+];
 
 export interface AppConfig
 {
@@ -100,10 +106,12 @@ function readEndpoints(): string[]
 {
     const raw = process.env.FANQIE_API_ENDPOINTS ?? "";
 
-    return raw
+    const endpoints = raw
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean);
+
+    return endpoints.length > 0 ? endpoints : DEFAULT_FANQIE_API_ENDPOINTS;
 }
 
 export function loadConfig(): AppConfig
@@ -112,7 +120,9 @@ export function loadConfig(): AppConfig
     const legacyConfigSource = process.env.LEGACY_CONFIG_SOURCE
         ?? "D:\\Novel\\Fanqie\\Tomato-Novel-Downloader\\config.yml";
     const legacyExeSource = process.env.LEGACY_EXE_SOURCE
-        ?? "D:\\Novel\\Fanqie\\Tomato-Novel-Downloader\\TomatoNovelDownloader-Win64.exe";
+        ?? (process.platform === "win32"
+            ? "D:\\Novel\\Fanqie\\Tomato-Novel-Downloader\\TomatoNovelDownloader-Win64.exe"
+            : "/opt/fanqie-legacy/tomato-novel-downloader");
     const legacyExePath = process.env.LEGACY_EXE_PATH
         ? resolveFromRoot(process.env.LEGACY_EXE_PATH)
         : legacyExeSource;

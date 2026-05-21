@@ -15,9 +15,13 @@ Mục tiêu là để một AI agent khác có thể làm theo chỉ với SSH p
   - `10053 -> 8790`
 - Legacy Linux binary:
   - `/opt/fanqie-legacy/tomato-novel-downloader`
+- Nguồn legacy Linux binary:
+  - `https://github.com/zhongbai2333/Tomato-Novel-Downloader/releases`
 - Dịch preview metadata:
   - `TRANSLATION_PROVIDER=stv`
   - `STV_API_URL=https://comic.sangtacvietcdn.xyz/tsm.php`
+- Tải Fanqie:
+  - `FANQIE_API_ENDPOINTS` phải có pool endpoint `batch_full` hoặc để code tự dùng mặc định.
 - Không dùng binary Windows trên Ubuntu.
 
 ## Luồng Deploy
@@ -50,7 +54,10 @@ Mục tiêu là để một AI agent khác có thể làm theo chỉ với SSH p
    LEGACY_EXE_PATH=/opt/fanqie-legacy/tomato-novel-downloader
    TRANSLATION_PROVIDER=stv
    STV_API_URL=https://comic.sangtacvietcdn.xyz/tsm.php
+   FANQIE_API_ENDPOINTS=https://api5-normal-sinfonlinea.fqnovel.com,https://api5-normal-sinfonlineb.fqnovel.com,https://api5-normal-sinfonlinec.fqnovel.com,https://api5-normal.fqnovel.com
    ```
+   Nếu đang cài legacy mới, lấy bản Linux trong release của `zhongbai2333/Tomato-Novel-Downloader` rồi đặt binary về
+   `/opt/fanqie-legacy/tomato-novel-downloader`.
 6. Dừng process đang giữ `8787` và `8790`.
 7. Build:
    ```bash
@@ -89,6 +96,7 @@ Sau đó:
 - `8787` trả `{"ok":true}`
 - `8790` mở được admin UI
 - preview metadata hiển thị tiếng Việt
+- `FANQIE_API_ENDPOINTS` không để trống khi deploy Fanqie
 - legacy Linux binary được spawn đúng path
 - không còn process cũ giữ port
 - log backend không báo lỗi STV
@@ -121,3 +129,4 @@ Không xóa:
 
 - `mock` chỉ dùng cho test UI hoặc test logic không cần dịch thật.
 - Nếu deploy mới mà preview lại thành tiếng Trung, kiểm tra `.env` trước tiên.
+- Nếu tải Fanqie bị `429`, kiểm tra ngay `FANQIE_API_ENDPOINTS` và đừng để `use_official_api: true`.

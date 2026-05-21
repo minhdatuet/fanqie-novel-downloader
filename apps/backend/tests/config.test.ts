@@ -28,4 +28,30 @@ describe("loadConfig", () =>
             }
         }
     });
+
+    it("mac dinh co pool endpoint Fanqie de tranh official API", () =>
+    {
+        const previousFanqieApiEndpoints = process.env.FANQIE_API_ENDPOINTS;
+
+        delete process.env.FANQIE_API_ENDPOINTS;
+
+        try
+        {
+            const config = loadConfig();
+
+            expect(config.fanqieApiEndpoints.length).toBeGreaterThan(0);
+            expect(config.fanqieApiEndpoints[0]).toContain("fqnovel.com");
+        }
+        finally
+        {
+            if (previousFanqieApiEndpoints === undefined)
+            {
+                delete process.env.FANQIE_API_ENDPOINTS;
+            }
+            else
+            {
+                process.env.FANQIE_API_ENDPOINTS = previousFanqieApiEndpoints;
+            }
+        }
+    });
 });
