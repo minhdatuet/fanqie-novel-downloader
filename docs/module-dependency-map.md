@@ -1,6 +1,6 @@
-# Sơ Đồ Module Và Dependency
+# Sơ Đồ Module Và Phụ Thuộc
 
-Tài liệu này ghi lại các dependency chính trong repo để hỗ trợ sửa code, refactor, và đọc kiến trúc nhanh.
+Tài liệu này ghi lại các phụ thuộc chính trong repo để hỗ trợ sửa code, refactor, và đọc kiến trúc nhanh.
 
 ## Cấp Module Cao
 
@@ -13,7 +13,7 @@ Repo chia thành các nhóm sau:
 - `tests`: kiểm thử
 - `tools/legacy`: binary legacy
 
-## Dependency Chính
+## Phụ Thuộc Chính
 
 ```mermaid
 graph TD
@@ -38,16 +38,16 @@ graph TD
     FN --> LEGACY["tools/legacy executable"]
 ```
 
-## Dải Lớp
+## Phân Lớp
 
-### 1. Presentation
+### 1. Lớp Trình Bày
 
 - `apps/frontend`
 - `apps/admin`
 
 Chỉ gọi API backend, không truy cập trực tiếp vào storage.
 
-### 2. Application
+### 2. Lớp Ứng Dụng
 
 - `JobService`
 - `LibraryService`
@@ -58,7 +58,7 @@ Chỉ gọi API backend, không truy cập trực tiếp vào storage.
 
 Đây là lớp điều phối và chính sách.
 
-### 3. Domain / Source Adapters
+### 3. Lớp Miền / Bộ Chuyển Nguồn
 
 - `FanqieService`
 - `SixtyNineShuService`
@@ -68,14 +68,14 @@ Chỉ gọi API backend, không truy cập trực tiếp vào storage.
 
 Mỗi service chịu trách nhiệm parse, resolve, và download theo nguồn.
 
-### 4. Persistence / Infra
+### 4. Lớp Lưu Trữ / Hạ Tầng
 
 - `DatabaseService`
 - `MetricsService`
 - `storageSummary`
 - `pathSafety`
 
-### 5. Utilities
+### 5. Tiện Ích
 
 - `utils/text.ts`
 - `utils/file.ts`
@@ -118,22 +118,22 @@ Nên giữ schema và mapping ổn định vì:
 | --- | --- |
 | `apps/backend/src/services/jobService.ts` | Điều phối job, queue, retry, cancel |
 | `apps/backend/src/infra/db/database.ts` | Schema và query của toàn hệ thống |
-| `apps/backend/src/services/jobArtifactService.ts` | File artifact và library synchronization |
+| `apps/backend/src/services/jobArtifactService.ts` | File artifact và đồng bộ thư viện |
 | `apps/backend/src/routes/apiRoutes.ts` | Hợp đồng HTTP với frontend |
-| `apps/frontend/src/api.ts` | Client-side API contract |
+| `apps/frontend/src/api.ts` | Hợp đồng API phía client |
 | `apps/frontend/src/App.tsx` | Luồng UI chính |
 | `apps/backend/src/server.ts` | Bootstrap và static serving |
 
 ## Cụm Chức Năng
 
-### Cụm Download
+### Cụm Tải
 
 - `resolveBook()`
 - `createDownloadJob()`
 - `downloadPlanAsync()`
 - `saveDownloadedBookAsync()`
 
-### Cụm Translate
+### Cụm Dịch
 
 - `createTranslateJob()`
 - `createTranslateJobFromLibrary()`
@@ -147,7 +147,7 @@ Nên giữ schema và mapping ổn định vì:
 - `proxyLegacyImage()`
 - `warmLegacyAsync()`
 
-### Cụm Library
+### Cụm Thư Viện
 
 - `LibraryService`
 - `DatabaseService.listLibraryItems()`
@@ -178,4 +178,3 @@ Test hiện tại tập trung vào:
 3. Nếu đổi artifact layout, cập nhật cả `JobArtifactService` và `LibraryService`.
 4. Nếu đổi source adapter, kiểm tra lại flow `resolve -> download -> translate`.
 5. Nếu thêm module mới, ưu tiên đặt nó ở đúng lớp thay vì trộn logic vào route.
-

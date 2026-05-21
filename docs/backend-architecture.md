@@ -7,7 +7,7 @@ ghi dữ liệu vào SQLite, phục vụ file tải xuống, và cung cấp số
 
 - Một backend duy nhất điều phối toàn bộ nghiệp vụ.
 - Tách rõ lớp HTTP, service, storage, và utilities.
-- Hỗ trợ cả luồng hiện đại lẫn legacy bridge cho Fanqie.
+- Hỗ trợ cả luồng hiện đại lẫn cầu nối legacy cho Fanqie.
 - Giữ trạng thái job và thư viện trên local disk để dễ deploy bằng Docker hoặc máy cá nhân.
 
 ## Điểm Vào Chính
@@ -30,7 +30,7 @@ Ngoài API chính, backend còn cung cấp:
 - `/readyz`
 - `/metrics`
 
-### 2. Config
+### 2. Cấu Hình
 
 `config.ts` đọc biến môi trường và tạo `AppConfig`.
 
@@ -43,7 +43,7 @@ Các nhóm cấu hình chính:
 - legacy bridge
 - STV endpoint và key
 
-### 3. Database
+### 3. Cơ Sở Dữ Liệu
 
 `DatabaseService` dùng SQLite và tạo các bảng:
 
@@ -61,7 +61,7 @@ Nó cũng:
 - upsert thư viện và file artifact
 - thống kê job và storage
 
-### 4. Job Orchestration
+### 4. Điều Phối Job
 
 `JobService` là lớp điều phối trung tâm. Nó:
 
@@ -72,7 +72,7 @@ Nó cũng:
 - lưu snapshot job vào `storage/jobs`
 - đồng bộ dữ liệu sang DB
 
-### 5. Artifact Management
+### 5. Quản Lý Artifact
 
 `JobArtifactService` xử lý:
 
@@ -99,7 +99,7 @@ Mỗi nguồn có:
 - `supportsTranslate`
 - `requiresAuth`
 
-## Luồng Request
+## Luồng Yêu Cầu
 
 ### Resolve
 
@@ -125,7 +125,7 @@ Mỗi nguồn có:
 3. `TranslatorService` xử lý theo provider.
 4. `JobArtifactService` ghi bản dịch vào `storage/books`.
 
-## Legacy Bridge
+## Cầu Nối Legacy
 
 Backend mới có thể dùng exe legacy gốc khi:
 
@@ -138,7 +138,7 @@ Khi bật bridge, backend có thể:
 - proxy preview cover
 - warm up legacy backend khi ready check
 
-## Admin Portal
+## Cổng Quản Trị
 
 `GET /api/admin/overview` chỉ cho phép request đi qua admin portal nội bộ.
 Nó trả về:
@@ -171,7 +171,7 @@ Backend có các cơ chế quan sát sau:
 | `TranslatorService` | Dịch nội dung |
 | `FanqieService` / `TrxsService` / `SixtyNineShuService` / `WikicvService` | Tải dữ liệu theo nguồn |
 
-## Mermaid
+## Sơ Đồ Mermaid
 
 ```mermaid
 flowchart TD
@@ -194,7 +194,8 @@ flowchart TD
 
 ## Ghi Nhớ Khi Sửa Backend
 
-- Không gọi `Find()` / `GetComponent()` kiểu Unity, nhưng vẫn phải cache reference và tránh tạo allocation thừa trong vòng lặp nóng.
+- Không gọi `Find()` / `GetComponent()` kiểu Unity, nhưng vẫn phải cache reference và tránh tạo allocation thừa trong
+  vòng lặp nóng.
 - Giữ các biến môi trường tương thích với luồng deploy hiện tại.
 - Nếu đổi format file hoặc đường dẫn, phải cập nhật cả DB mapping và artifact service.
 - Nếu thêm route mới, nên kèm audit log hoặc rate limit nếu route có thể bị spam.

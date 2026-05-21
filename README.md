@@ -1,18 +1,47 @@
 # Tomato Downloader
 
-Web tải truyện Fanqie/Tomato và dịch sang tiếng Việt.
+Ứng dụng tải và dịch truyện Fanqie/Tomato, đồng thời quản lý thư viện file đã tải trong local storage.
+
+## Tổng Quan
+
+Hệ thống này gồm 3 lớp chính:
+
+- `apps/backend`: Fastify + TypeScript, xử lý nghiệp vụ, job queue, API, lưu trữ SQLite, và cầu nối legacy.
+- `apps/frontend`: React + Vite, là giao diện người dùng để resolve, tải, dịch, và xem thư viện.
+- `apps/admin`: dashboard quản trị riêng để theo dõi tình trạng hệ thống.
+
+Ngoài ra repo còn có:
+
+- `scripts/`: script migration, backup, cài legacy Linux, và chạy legacy web UI.
+- `tests/`: test backend và load test.
+- `storage/`: dữ liệu runtime.
+- `docs/`: tài liệu kiến trúc và vận hành.
+
+## Tính Năng Chính
+
+- Resolve truyện theo link hoặc ID.
+- Tải truyện gốc từ nhiều nguồn, trong đó có Fanqie.
+- Dịch nội dung sang tiếng Việt qua STV.
+- Lưu bản gốc và bản dịch vào thư viện cá nhân.
+- Theo dõi tiến trình job bằng SSE, có fallback polling.
+- Hỗ trợ legacy bridge cho luồng Fanqie khi cần.
 
 ## Công Nghệ
 
-- Backend: Fastify + TypeScript, port mặc định `8787`.
-- Frontend: Vite + React + TypeScript, port mặc định `5173`.
-- Progress: backend phát SSE tại `/api/jobs/:id/events`, frontend có fallback polling.
-- Lưu trữ: thư mục `storage`, phù hợp mount volume khi deploy Docker.
-- Thư viện: backend quét `storage/books`, cache ngắn để nhiều user tra cứu cùng lúc.
-- Tác vụ nặng: tải/dịch chạy qua hàng đợi, giới hạn song song bằng `JOB_CONCURRENCY`.
-- Tải nội dung: backend tự chạy exe gốc làm sidecar và chỉnh `max_workers` bằng `LEGACY_MAX_WORKERS`.
+- Backend: Fastify, TypeScript, SQLite
+- Frontend: React, Vite, TypeScript
+- UI admin: React, Vite, TypeScript
+- Cập nhật tiến trình: SSE
+- Lưu trữ: local disk + SQLite
 
 ## Chạy Local
+
+### Yêu cầu
+
+- Node.js `>= 20.11.0`
+- npm
+
+### Cài đặt và chạy
 
 ```powershell
 npm install
@@ -20,75 +49,124 @@ Copy-Item .env.example .env
 npm run dev
 ```
 
-Mở `http://localhost:5173`.
+Mở:
 
-Luồng chính:
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8787`
 
-1. Nhập ID/link truyện.
-2. Nếu truyện đã có trong thư viện, app tự chuyển sang tab Thư viện và focus truyện đó.
-3. Nếu chưa có, app hiển thị thông tin truyện và nút tải.
-4. Sau khi tải xong mới hiện nút tải file tiếng Trung và nút dịch tiếng Việt.
-5. Sau khi dịch xong mới hiện nút tải file tiếng Việt.
-6. Thư viện có thể tìm kiếm, tải bản Trung, tải bản Việt nếu có, hoặc bấm dịch nếu chưa có bản Việt.
+## Luồng Sử Dụng
 
-Backend mới mặc định tự khởi động exe gốc ở `127.0.0.1:18424` và gọi API của exe để lấy thông tin/tải truyện.
-Cơ chế này tương tự `run_vi.js` của project gốc.
+1. Nhập link hoặc ID truyện.
+2. Hệ thống resolve thông tin truyện.
+3. Nếu truyện chưa có, bấm tải để lấy bản gốc.
+4. Sau khi tải xong, có thể dịch sang tiếng Việt.
+5. Thư viện cho phép tìm kiếm, tải bản gốc, tải bản dịch, hoặc dịch lại nếu cần.
 
-Nếu muốn mở riêng Web UI gốc ở port `18423`:
+## Cấu Hình Quan Trọng
+
+File gốc nên là `.env` dựa trên `.env.example`.
+
+### Các biến cần chú ý
+
+- `PORT`: cổng backend, mặc định `8787`
+- `ADMIN_PORT`: cổng admin, mặc định `8790`
+- `LEGACY_BRIDGE`: bật cầu nối legacy, mặc định `true`
+- `LEGACY_EXE_SOURCE`: đường dẫn file legacy trên local Windows
+- `LEGACY_EXE_PATH`: đường dẫn binary legacy trên Linux server
+- `TRANSLATION_PROVIDER`: provider dịch, mặc định `stv`
+- `STV_API_URL`: endpoint STV
+- `FANQIE_API_ENDPOINTS`: danh sách endpoint Fanqie `batch_full`
+- `DATA_DIR`: thư mục lưu dữ liệu runtime
+
+### Quy ước legacy
+
+- Trên local Windows, `LEGACY_EXE_SOURCE` mặc định trỏ tới `TomatoNovelDownloader-Win64.exe`.
+- Trên Linux server, `LEGACY_EXE_PATH` phải trỏ tới binary Linux tại `/opt/fanqie-legacy/tomato-novel-downloader`.
+- Bản Linux nên lấy từ release của [`zhongbai2333/Tomato-Novel-Downloader`](https://github.com/zhongbai2333/Tomato-Novel-Downloader/releases).
+- Có thể cài tự động bằng:
+
+```bash
+npm run legacy:install-linux
+```
+
+- Script cài Linux ưu tiên asset `Linux_musl_*` để tránh lỗi phụ thuộc `GLIBC_2.39` trên Ubuntu Server 22.
+- Script này chỉ tải binary Linux từ release upstream, không tự cài thêm API nào.
+
+## Chạy Legacy Web UI
+
+Nếu cần mở riêng web UI gốc:
 
 ```powershell
 npm run legacy:copy
 npm run legacy:start
 ```
 
-- Project mới: `http://localhost:5173`, backend `http://localhost:8787`.
-- Web UI gốc từ exe: `http://127.0.0.1:18423`.
+- Web UI legacy: `http://127.0.0.1:18423`
+- Legacy backend port: `18424`
 
-## Cấu Hình Quan Trọng
+## Script Hữu Ích
 
-- `JOB_CONCURRENCY`: số job tải/dịch chạy song song ở backend mới. Mặc định `4` để chịu nhiều user mà không mở
-  quá nhiều job nặng.
-- `TRANSLATION_CONCURRENCY`: số chương dịch song song trong một job dịch. Mặc định `12`; tăng lên `16` nếu máy
-  khỏe và STV chưa bị throttle.
-- `TRANSLATION_BATCH_PAUSE_MS`: độ trễ giữa các batch chương. Mặc định `0` để không tự tạo thêm chờ.
-- `TRANSLATION_MAX_BATCH_CHARACTERS`: giới hạn ký tự tối đa cho một batch paragraph trước khi rơi về dịch từng đoạn.
-  Mặc định `8000`; tăng nếu STV trả lời ổn định.
-- `TRANSLATION_PARAGRAPH_BATCH_SIZE`: số paragraph gộp trong một request dịch. Mặc định `20`.
-- `TRANSLATION_PARAGRAPH_BATCH_PAUSE_MS`: độ trễ giữa các batch paragraph. Mặc định `200` để giảm nguy cơ throttle.
-- `TRANSLATION_SINGLE_PARAGRAPH_PAUSE_MS`: độ trễ giữa các lần dịch paragraph khi phải fallback từng đoạn. Mặc định `80`.
-- `LEGACY_MAX_WORKERS`: số worker tải nội bộ của exe gốc. Mặc định `12`; tăng lên `10-16` nếu máy/mạng khỏe,
-  giảm nếu bị timeout hoặc throttle.
-- `MAX_WORKERS`: số worker cho downloader TypeScript fallback khi không dùng legacy bridge. Mặc định `12`.
-- `LEGACY_BRIDGE`: mặc định `true`; backend mới dùng exe gốc ở port `LEGACY_PORT`.
-- `LEGACY_EXE_PATH` hoặc `LEGACY_EXE_SOURCE`: đường dẫn exe gốc.
-- Trên Linux, legacy binary phải lấy từ release của `zhongbai2333/Tomato-Novel-Downloader` và đặt tại
-  `/opt/fanqie-legacy/tomato-novel-downloader`.
-- Có thể cài đúng bản Linux bằng `npm run legacy:install-linux`.
-- Script cài Linux ưu tiên asset `Linux_musl_*` để tránh lỗi phụ thuộc `GLIBC_2.39` trên Ubuntu Server 22.
-- `LEGACY_PORT`: port backend exe gốc cho bridge, mặc định `18424`.
-- `LEGACY_WEB_ADDR`: port Web UI cũ nếu chạy `npm run legacy:start`, mặc định `127.0.0.1:18423`.
-- `TRANSLATION_PROVIDER`: mặc định `stv`; chỉ đặt `mock` khi cần test UI không gọi STV.
-- `STV_API_URL`: mặc định `https://comic.sangtacvietcdn.xyz/tsm.php`.
-- `FANQIE_API_ENDPOINTS`: danh sách endpoint `batch_full` phân tách bằng dấu phẩy. Mặc định dùng pool
-  `api5-normal-sinfonlinea/b/c` và `api5-normal.fqnovel.com` để tránh rơi về `use_official_api=true` khi deploy.
-- `DATA_DIR`: nơi lưu truyện tải về và file dịch.
+- `npm run dev`: chạy backend và frontend song song
+- `npm run build`: build backend, frontend, và admin
+- `npm run test`: chạy test backend
+- `npm run backup`: backup dữ liệu
+- `npm run db:migrate`: migrate storage cũ sang SQLite
+- `npm run legacy:copy`: copy legacy binary cho môi trường local
+- `npm run legacy:start`: chạy legacy web UI
+- `npm run legacy:install-linux`: tải và cài binary Linux từ release upstream
+- `npm run load:bench`: benchmark load
+- `npm run test:load`: smoke test load
 
-## Về Batch 25 Chương
+## Kích Thước Và Hiệu Năng
 
-Project gốc có chia nội dung thành nhóm `25` chương trong `src/download/downloader.rs`. Đây là batch size cho API
-`batch_full`, không phải giới hạn tổng số chương. Một truyện 800-1000 chương vẫn tải đủ, chỉ được chia thành nhiều nhóm.
+Hệ thống có một số giới hạn để tránh quá tải:
 
-Tốc độ tải nhanh nhất không nên chỉnh batch 25 vì endpoint dễ lỗi khi gửi quá nhiều `item_ids`. Cách đúng là tăng
-`LEGACY_MAX_WORKERS` để exe xử lý nhiều nhóm 25 chương song song. Với máy cá nhân nên bắt đầu từ `8`; nếu ổn có thể thử
-`10-12`. Khi deploy cho 50-100 user, giữ `JOB_CONCURRENCY` ở mức vừa phải để tạo hàng đợi thay vì để mọi user mở job tải
-cùng lúc.
+- `JOB_CONCURRENCY`: số job chạy song song
+- `TRANSLATION_CONCURRENCY`: số chunk dịch song song trong một job
+- `LEGACY_MAX_WORKERS`: số worker nội bộ của legacy binary
+- `TRANSLATION_BATCH_PAUSE_MS`: độ trễ giữa các batch dịch
+- `TRANSLATION_MAX_BATCH_CHARACTERS`: giới hạn ký tự cho một batch
 
-## Build Production
+Mặc định được tối ưu để chạy ổn trên máy cá nhân và deploy nhỏ, nhưng vẫn có thể tăng dần nếu hạ tầng đủ khỏe.
+
+## Tài Liệu Liên Quan
+
+- [Tổng kết dự án](./docs/project-summary.md)
+- [Kiến trúc backend](./docs/backend-architecture.md)
+- [Luồng job tải và dịch](./docs/job-flow.md)
+- [Sơ đồ module và phụ thuộc](./docs/module-dependency-map.md)
+- [Quy trình deploy](./docs/deploy-process.md)
+- [Sổ tay vận hành server](./docs/server-runbook.md)
+
+## Ghi Chú Vận Hành
+
+- `TRANSLATION_PROVIDER=stv` là mặc định cho preview metadata và bản dịch.
+- `FANQIE_API_ENDPOINTS` nên được khai báo rõ trong deploy để tránh rơi nhầm về hành vi không mong muốn.
+- Nếu preview hiện tiếng Trung, kiểm tra lại `.env` runtime trước tiên.
+- Nếu Fanqie trả `429`, kiểm tra legacy binary, endpoint Fanqie, và cấu hình server.
+
+## Kiểm Thử Và Build
 
 ```powershell
+npm run test
 npm run build
-npm start
 ```
 
-Sau build, backend phục vụ luôn frontend từ `apps/frontend/dist`.
-Nếu bạn tách frontend ra chạy riêng trên Vite hoặc Nginx, hãy đặt `VITE_API_BASE_URL` trỏ đúng về backend thay vì để `localhost`.
+Sau build, backend phục vụ frontend từ `apps/frontend/dist`.
+
+## Cấu Trúc Thư Mục
+
+- `apps/backend`: API, job queue, storage, legacy bridge
+- `apps/frontend`: UI người dùng
+- `apps/admin`: dashboard quản trị
+- `docs`: tài liệu kiến trúc và vận hành
+- `scripts`: công cụ vận hành
+- `storage`: dữ liệu runtime
+- `tests`: kiểm thử
+
+## Mục Tiêu Thiết Kế
+
+- Tách rõ luồng resolve, tải, dịch, và lưu trữ.
+- Giữ deploy đơn giản trên Windows local và Ubuntu server.
+- Cho phép AI agent đọc tài liệu là có thể vận hành lại đúng chuỗi thao tác.
+- Tránh nhầm lẫn giữa legacy binary local Windows và legacy binary Linux server.

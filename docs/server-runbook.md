@@ -1,6 +1,6 @@
-# Server Runbook
+# Sổ Tay Vận Hành Server
 
-Checklist ngắn để AI agent hoặc người vận hành deploy và restart server mà không làm lệch cấu hình dịch.
+Checklist ngắn để AI agent hoặc người vận hành deploy và restart server mà không làm lệch cấu hình.
 
 ## Mục Tiêu
 
@@ -8,6 +8,8 @@ Checklist ngắn để AI agent hoặc người vận hành deploy và restart s
 - Luôn dùng legacy Linux binary.
 - Nguồn legacy Linux binary phải là release của `zhongbai2333/Tomato-Novel-Downloader`.
 - Luôn để dịch metadata qua STV, không được rơi về `mock`.
+- Trên local Windows, legacy source tương ứng là `TomatoNovelDownloader-Win64.exe`; chỉ server Linux mới dùng binary
+  tải từ release upstream.
 - Không ghi mật khẩu vào file này.
 
 ## Checklist Thực Thi
@@ -20,14 +22,14 @@ Checklist ngắn để AI agent hoặc người vận hành deploy và restart s
 - [ ] Nếu cần cài lại legacy, lấy từ `https://github.com/zhongbai2333/Tomato-Novel-Downloader/releases`
 - [ ] Có thể cài tự động bằng `npm run legacy:install-linux`
 - [ ] Nếu chạy trên Linux, script sẽ ưu tiên asset `Linux_musl_*`
-- [ ] Kiểm tra `.env` runtime có các giá trị bắt buộc:
+- [ ] Kiểm tra `.env` runtime có các giá trị:
   - [ ] `PORT=8787`
   - [ ] `ADMIN_PORT=8790`
   - [ ] `LEGACY_BRIDGE=true`
   - [ ] `LEGACY_EXE_PATH=/opt/fanqie-legacy/tomato-novel-downloader`
   - [ ] `TRANSLATION_PROVIDER=stv`
   - [ ] `STV_API_URL=https://comic.sangtacvietcdn.xyz/tsm.php`
-  - [ ] `FANQIE_API_ENDPOINTS` không rỗng
+  - [ ] `FANQIE_API_ENDPOINTS` được khai báo rõ hoặc backend đang fallback pool mặc định
 - [ ] Dừng mọi process đang giữ `8787` và `8790`.
 - [ ] Nếu đang dùng worktree deploy, chuyển sang `~/tomato-downloader-deploy`.
 - [ ] Chạy build:
@@ -45,7 +47,8 @@ Checklist ngắn để AI agent hoặc người vận hành deploy và restart s
 
 - [ ] Xác nhận `TRANSLATION_PROVIDER=stv` thật sự đã được nạp vào runtime.
 - [ ] Xác nhận `STV_API_URL` còn truy cập được.
-- [ ] Xác nhận `FANQIE_API_ENDPOINTS` không rỗng và legacy config không còn `use_official_api: true`.
+- [ ] Xác nhận `FANQIE_API_ENDPOINTS` được khai báo rõ hoặc backend đang fallback pool mặc định.
+- [ ] Xác nhận legacy config không còn `use_official_api=true` nếu bạn muốn override endpoint.
 - [ ] Xác nhận `STV_API_KEY` nếu môi trường đó bắt buộc.
 - [ ] Xác nhận binary đang chạy đúng là bản Linux từ release của `zhongbai2333/Tomato-Novel-Downloader`.
 - [ ] Xác nhận backend đã restart sau khi sửa `.env`.

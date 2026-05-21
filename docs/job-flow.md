@@ -3,7 +3,7 @@
 Tài liệu này mô tả vòng đời job trong hệ thống, từ lúc người dùng nhập truyện cho tới lúc file được lưu và
 hiển thị trong thư viện.
 
-## Các Trạng Thái Job
+## Trạng Thái Job
 
 `JobRecord.status` có các giá trị:
 
@@ -15,15 +15,15 @@ hiển thị trong thư viện.
 
 ## Phân Loại Job
 
-### Download job
+### Job tải
 
 Job tải truyện gốc từ nguồn.
 
-### Translate job
+### Job dịch
 
 Job dịch nội dung đã tải sẵn hoặc lấy từ thư viện.
 
-## Luồng Download
+## Luồng Tải
 
 ```mermaid
 sequenceDiagram
@@ -51,7 +51,7 @@ sequenceDiagram
     JS-->>FE: SSE / polling updates
 ```
 
-### Bước Chi Tiết
+### Các Bước Chi Tiết
 
 1. Frontend gọi `resolveBook()` để lấy `DownloadPlan`.
 2. Nếu người dùng bấm tải, frontend gọi `startDownload()`.
@@ -67,7 +67,7 @@ sequenceDiagram
 7. `JobArtifactService` ghi TXT hoặc EPUB và tạo metadata chapters.
 8. Thư viện được upsert để UI đọc lại ngay.
 
-## Luồng Translate
+## Luồng Dịch
 
 ```mermaid
 sequenceDiagram
@@ -106,9 +106,9 @@ Nếu dịch từ `POST /api/library/:bookId/translate`:
 - tạo job dịch kiểu library
 - ghi bản dịch vào cùng thư mục sách
 
-## Retry Và Cancel
+## Thử Lại Và Hủy
 
-### Cancel
+### Hủy
 
 Khi cancel:
 
@@ -116,7 +116,7 @@ Khi cancel:
 - progress đổi sang thông điệp đã hủy
 - worker đang chạy sẽ bị chặn ở các điểm `throwIfCancelled()`
 
-### Retry
+### Thử Lại
 
 Retry chỉ hợp lệ với job `failed` hoặc `canceled`.
 
@@ -138,9 +138,9 @@ Mỗi update gồm:
 - `percent`
 - `message`
 
-## Storage Khi Job Hoàn Tất
+## Lưu Trữ Khi Job Hoàn Tất
 
-### Download hoàn tất
+### Tải hoàn tất
 
 Thư mục job thường có:
 
@@ -148,7 +148,7 @@ Thư mục job thường có:
 - `chapters.json`
 - metadata DB tương ứng
 
-### Translate hoàn tất
+### Dịch hoàn tất
 
 Thư mục sách thường có:
 
@@ -157,7 +157,7 @@ Thư mục sách thường có:
 - `chapters.json`
 - file EPUB nếu có build lại format
 
-## Quota Và Rate Limit
+## Hạn Mức Và Rate Limit
 
 Job creation bị ảnh hưởng bởi:
 
@@ -179,7 +179,7 @@ Mục tiêu là:
 - DB không ghi được snapshot job
 - output format chưa có nên phải sinh lại artifact
 
-## Khi Debug Job
+## Khi Gỡ Lỗi Job
 
 Ưu tiên kiểm tra theo thứ tự:
 
@@ -188,4 +188,3 @@ Mục tiêu là:
 3. log backend
 4. file artifact trong `storage/books`
 5. cache chapter trong `storage/cache/directory`
-

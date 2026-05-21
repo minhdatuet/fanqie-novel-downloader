@@ -1,6 +1,6 @@
 # Tổng Kết Dự Án Tomato Downloader
 
-Tài liệu này là bản tổng kết nhanh về repo `Tomato_Downloader`, được tạo sau khi index bằng `gitnexus` v1.6.5.
+Tài liệu này là bản tổng kết nhanh về repo `Tomato_Downloader`, được tạo sau khi index bằng `gitnexus`.
 
 ## Số Liệu GitNexus
 
@@ -13,7 +13,8 @@ Tài liệu này là bản tổng kết nhanh về repo `Tomato_Downloader`, đ�
 ## Mục Tiêu Dự Án
 
 Đây là ứng dụng tải và dịch truyện Fanqie/Tomato, đồng thời quản lý thư viện file đã tải trong local storage.
-Luồng chính của sản phẩm là:
+
+Luồng chính của sản phẩm:
 
 1. Nhập link hoặc ID truyện.
 2. Resolve thông tin truyện từ nguồn tương ứng.
@@ -41,17 +42,17 @@ Ngoài ra còn có:
 Backend nằm ở `apps/backend` và dùng:
 
 - Fastify cho HTTP API
-- SQLite cho persistence
+- SQLite cho lưu trữ
 - SSE cho cập nhật tiến trình job
 - CORS và static serving cho frontend build
 
-### Điểm vào chính
+### Điểm Vào Chính
 
 - `apps/backend/src/server.ts`: dựng app, mount route, phục vụ frontend build, mở admin server riêng.
 - `apps/backend/src/routes/apiRoutes.ts`: khai báo toàn bộ API.
 - `apps/backend/src/config.ts`: đọc biến môi trường và dựng cấu hình runtime.
 
-### Các API chính
+### Các API Chính
 
 - `GET /api/health`, `GET /api/readyz`
 - `GET /api/sources`
@@ -68,7 +69,7 @@ Backend nằm ở `apps/backend` và dùng:
 - `POST /api/library/:bookId/translate`
 - `GET /api/admin/overview`
 
-### Nghiệp vụ lõi
+### Nghiệp Vụ Lõi
 
 `JobService` là trung tâm điều phối:
 
@@ -87,7 +88,7 @@ Backend hỗ trợ nhiều nguồn truyện:
 - trxs.cc
 - Wikicv
 
-### Legacy bridge
+### Cầu Nối Legacy
 
 Backend mới có thể gọi sang exe legacy gốc khi cần:
 
@@ -99,7 +100,7 @@ Backend mới có thể gọi sang exe legacy gốc khi cần:
 
 Frontend ở `apps/frontend` là UI người dùng chính.
 
-### Chức năng chính
+### Chức Năng Chính
 
 - nhập link/ID truyện
 - xem trạng thái resolve/download/translate
@@ -107,7 +108,7 @@ Frontend ở `apps/frontend` là UI người dùng chính.
 - xem và tìm kiếm thư viện
 - tải file gốc hoặc file dịch ở định dạng `txt` / `epub`
 
-### Component nổi bật
+### Component Nổi Bật
 
 - `NovelSearch`: nhập truyện và chọn nguồn
 - `BookHero`: hiển thị thông tin truyện
