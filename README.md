@@ -63,6 +63,7 @@ npm run legacy:start
 - `LEGACY_EXE_PATH` hoặc `LEGACY_EXE_SOURCE`: đường dẫn exe gốc.
 - Trên Linux, legacy binary phải lấy từ release của `zhongbai2333/Tomato-Novel-Downloader` và đặt tại
   `/opt/fanqie-legacy/tomato-novel-downloader`.
+- Có thể cài đúng bản Linux bằng `npm run legacy:install-linux`.
 - `LEGACY_PORT`: port backend exe gốc cho bridge, mặc định `18424`.
 - `LEGACY_WEB_ADDR`: port Web UI cũ nếu chạy `npm run legacy:start`, mặc định `127.0.0.1:18423`.
 - `TRANSLATION_PROVIDER`: mặc định `stv`; chỉ đặt `mock` khi cần test UI không gọi STV.

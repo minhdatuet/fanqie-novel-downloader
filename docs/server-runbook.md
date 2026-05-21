@@ -18,6 +18,7 @@ Checklist ngắn để AI agent hoặc người vận hành deploy và restart s
 - [ ] `git reset --hard origin/main`
 - [ ] Kiểm tra binary legacy Linux: `/opt/fanqie-legacy/tomato-novel-downloader`
 - [ ] Nếu cần cài lại legacy, lấy từ `https://github.com/zhongbai2333/Tomato-Novel-Downloader/releases`
+- [ ] Có thể cài tự động bằng `npm run legacy:install-linux`
 - [ ] Kiểm tra `.env` runtime có các giá trị bắt buộc:
   - [ ] `PORT=8787`
   - [ ] `ADMIN_PORT=8790`

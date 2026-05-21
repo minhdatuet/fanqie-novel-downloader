@@ -58,6 +58,10 @@ Mục tiêu là để một AI agent khác có thể làm theo chỉ với SSH p
    ```
    Nếu đang cài legacy mới, lấy bản Linux trong release của `zhongbai2333/Tomato-Novel-Downloader` rồi đặt binary về
    `/opt/fanqie-legacy/tomato-novel-downloader`.
+   Có thể làm luôn bằng:
+   ```bash
+   npm run legacy:install-linux
+   ```
 6. Dừng process đang giữ `8787` và `8790`.
 7. Build:
    ```bash

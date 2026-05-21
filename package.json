@@ -11,6 +11,7 @@
         "dev:admin": "npm run dev -w apps/admin",
         "db:migrate": "node scripts/migrate-storage-to-db.mjs",
         "legacy:copy": "node scripts/copy-legacy.mjs",
+        "legacy:install-linux": "node scripts/install-fanqie-legacy-linux.mjs",
         "legacy:start": "node --env-file-if-exists=.env scripts/start-legacy-webui.mjs",
         "load:bench": "node tests/load/autocannon.mjs",
         "test": "npm run test -w apps/backend",
