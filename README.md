@@ -63,7 +63,7 @@ npm run legacy:start
 - `LEGACY_EXE_PATH` hoặc `LEGACY_EXE_SOURCE`: đường dẫn exe gốc.
 - `LEGACY_PORT`: port backend exe gốc cho bridge, mặc định `18424`.
 - `LEGACY_WEB_ADDR`: port Web UI cũ nếu chạy `npm run legacy:start`, mặc định `127.0.0.1:18423`.
-- `TRANSLATION_PROVIDER`: dùng `mock` để test UI hoặc `stv` để gọi STV.
+- `TRANSLATION_PROVIDER`: mặc định `stv`; chỉ đặt `mock` khi cần test UI không gọi STV.
 - `STV_API_URL`: mặc định `https://comic.sangtacvietcdn.xyz/tsm.php`.
 - `DATA_DIR`: nơi lưu truyện tải về và file dịch.
 

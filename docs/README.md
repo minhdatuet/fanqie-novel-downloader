@@ -9,6 +9,7 @@ Mục lục nhanh cho phần tài liệu nội bộ của repo `Tomato_Downloade
 - [Luồng job tải và dịch](./job-flow.md)
 - [Sơ đồ module và dependency](./module-dependency-map.md)
 - [Quy trình deploy](./deploy-process.md)
+- [Server Runbook](./server-runbook.md)
 
 ## Cách Đọc
 

@@ -108,7 +108,7 @@ function readEndpoints(): string[]
 
 export function loadConfig(): AppConfig
 {
-    const translationProvider = process.env.TRANSLATION_PROVIDER === "stv" ? "stv" : "mock";
+    const translationProvider = process.env.TRANSLATION_PROVIDER === "mock" ? "mock" : "stv";
     const legacyConfigSource = process.env.LEGACY_CONFIG_SOURCE
         ?? "D:\\Novel\\Fanqie\\Tomato-Novel-Downloader\\config.yml";
     const legacyExeSource = process.env.LEGACY_EXE_SOURCE
