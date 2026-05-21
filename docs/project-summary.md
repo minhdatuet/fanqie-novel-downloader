@@ -12,13 +12,13 @@ Tài liệu này là bản tổng kết nhanh về repo `Tomato_Downloader`, đ�
 
 ## Mục Tiêu Dự Án
 
-Đây là ứng dụng tải và dịch truyện Fanqie/Tomato, đồng thời quản lý thư viện file đã tải trong local storage.
+Đây là ứng dụng web tải và dịch truyện từ nhiều nguồn, đồng thời quản lý thư viện file đã tải trong local storage.
 
 Luồng chính của sản phẩm:
 
 1. Nhập link hoặc ID truyện.
-2. Resolve thông tin truyện từ nguồn tương ứng.
-3. Tải bản gốc tiếng Trung.
+2. Resolve thông tin truyện từ nguồn đã chọn.
+3. Tải bản gốc từ nguồn.
 4. Dịch sang tiếng Việt.
 5. Lưu cả file gốc và file dịch vào thư viện cá nhân.
 
@@ -32,7 +32,7 @@ Repo được tổ chức theo mô hình monorepo với 3 ứng dụng chính:
 
 Ngoài ra còn có:
 
-- `scripts/`: script cho migration, backup, copy legacy, và chạy legacy web UI.
+- `scripts/`: script cho migration, backup, cài legacy Linux, và chạy legacy web UI.
 - `tests/`: test load và fake legacy server.
 - `tools/legacy/`: file exe legacy gốc để backend mới có thể bridge sang luồng cũ.
 - `storage/`: dữ liệu runtime, gồm jobs, cache, books, legacy và database.
@@ -88,9 +88,9 @@ Backend hỗ trợ nhiều nguồn truyện:
 - trxs.cc
 - Wikicv
 
-### Cầu Nối Legacy
+### Legacy Bridge
 
-Backend mới có thể gọi sang exe legacy gốc khi cần:
+Backend mới có thể gọi sang exe legacy gốc khi cần, chủ yếu cho riêng Fanqie:
 
 - dùng `LEGACY_BRIDGE=true`
 - tự khởi động và warm up backend legacy

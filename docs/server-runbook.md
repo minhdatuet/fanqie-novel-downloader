@@ -40,7 +40,7 @@ Checklist ngắn để AI agent hoặc người vận hành deploy và restart s
   - [ ] `curl http://127.0.0.1:8787/healthz`
   - [ ] `curl http://127.0.0.1:8790/healthz`
 - [ ] Kiểm tra preview truyện trả tiếng Việt.
-- [ ] Kiểm tra tải Fanqie không còn trả `Legacy API lỗi HTTP 429`.
+- [ ] Kiểm tra riêng nguồn Fanqie không còn trả `Legacy API lỗi HTTP 429`.
 - [ ] Dọn log, symlink thử nghiệm, Docker artifact lỗi nếu có.
 
 ## Nếu Preview Vẫn Ra Tiếng Trung

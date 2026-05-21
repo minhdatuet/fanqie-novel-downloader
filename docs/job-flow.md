@@ -17,7 +17,7 @@ hiển thị trong thư viện.
 
 ### Job tải
 
-Job tải truyện gốc từ nguồn.
+Job tải truyện gốc từ nguồn đã chọn.
 
 ### Job dịch
 
@@ -62,7 +62,7 @@ sequenceDiagram
    - `SixtyNineShuService`
    - `TrxsService`
    - `WikicvService`
-   - `LegacyService` nếu Fanqie bridge đang bật
+   - `LegacyService` nếu cầu nối Fanqie đang bật
 6. Chapter được chuẩn hóa thành `StoredChapter[]`.
 7. `JobArtifactService` ghi TXT hoặc EPUB và tạo metadata chapters.
 8. Thư viện được upsert để UI đọc lại ngay.
@@ -174,7 +174,7 @@ Mục tiêu là:
 ## Các Điểm Dễ Hỏng
 
 - chapter list không lấy được từ nguồn
-- endpoint Fanqie bị chặn hoặc throttle
+- riêng endpoint Fanqie bị chặn hoặc throttle
 - file gốc không tồn tại khi retry dịch
 - DB không ghi được snapshot job
 - output format chưa có nên phải sinh lại artifact

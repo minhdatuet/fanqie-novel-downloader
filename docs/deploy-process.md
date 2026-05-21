@@ -99,7 +99,7 @@ curl http://127.0.0.1:8790/healthz
 ```
 
 13. Kiểm tra preview truyện phải ra tiếng Việt.
-14. Kiểm tra tải Fanqie không còn trả `Legacy API lỗi HTTP 429`.
+14. Kiểm tra riêng nguồn Fanqie không còn trả `Legacy API lỗi HTTP 429`.
 
 ## Worktree Deploy Riêng
 
@@ -136,7 +136,7 @@ Sau đó:
 4. Xem log backend để biết STV bị lỗi HTTP hay timeout.
 5. Restart backend sau khi sửa env.
 
-## Nếu Tải Fanqie Vẫn 429
+## Nếu Riêng Nguồn Fanqie Vẫn 429
 
 1. Kiểm tra `FANQIE_API_ENDPOINTS`.
 2. Xác nhận backend không còn override sang `use_official_api=true`.

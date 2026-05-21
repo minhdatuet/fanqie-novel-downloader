@@ -7,7 +7,7 @@ ghi dữ liệu vào SQLite, phục vụ file tải xuống, và cung cấp số
 
 - Một backend duy nhất điều phối toàn bộ nghiệp vụ.
 - Tách rõ lớp HTTP, service, storage, và utilities.
-- Hỗ trợ cả luồng hiện đại lẫn cầu nối legacy cho Fanqie.
+- Hỗ trợ nhiều nguồn truyện, trong đó Fanqie có thể đi qua legacy bridge khi cần.
 - Giữ trạng thái job và thư viện trên local disk để dễ deploy bằng Docker hoặc máy cá nhân.
 
 ## Điểm Vào Chính
@@ -127,7 +127,7 @@ Mỗi nguồn có:
 
 ## Cầu Nối Legacy
 
-Backend mới có thể dùng exe legacy gốc khi:
+Backend mới có thể dùng exe legacy gốc khi làm việc với Fanqie:
 
 - `LEGACY_BRIDGE=true`
 - file exe tồn tại tại đường dẫn cấu hình

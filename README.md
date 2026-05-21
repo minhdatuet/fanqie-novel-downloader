@@ -1,6 +1,6 @@
 # Tomato Downloader
 
-Ứng dụng tải và dịch truyện Fanqie/Tomato, đồng thời quản lý thư viện file đã tải trong local storage.
+Ứng dụng web tải truyện từ nhiều nguồn, dịch sang tiếng Việt, và quản lý thư viện file đã tải trong local storage.
 
 ## Tổng Quan
 
@@ -20,11 +20,11 @@ Ngoài ra repo còn có:
 ## Tính Năng Chính
 
 - Resolve truyện theo link hoặc ID.
-- Tải truyện gốc từ nhiều nguồn, trong đó có Fanqie.
+- Tải truyện gốc từ nhiều nguồn như Fanqie, Qidian, 69shu, trxs.cc, và Wikicv.
 - Dịch nội dung sang tiếng Việt qua STV.
 - Lưu bản gốc và bản dịch vào thư viện cá nhân.
 - Theo dõi tiến trình job bằng SSE, có fallback polling.
-- Hỗ trợ legacy bridge cho luồng Fanqie khi cần.
+- Hỗ trợ legacy bridge cho riêng nguồn Fanqie khi cần.
 
 ## Công Nghệ
 
@@ -75,7 +75,7 @@ File gốc nên là `.env` dựa trên `.env.example`.
 - `LEGACY_EXE_PATH`: đường dẫn binary legacy trên Linux server
 - `TRANSLATION_PROVIDER`: provider dịch, mặc định `stv`
 - `STV_API_URL`: endpoint STV
-- `FANQIE_API_ENDPOINTS`: danh sách endpoint Fanqie `batch_full`
+- `FANQIE_API_ENDPOINTS`: danh sách endpoint `batch_full` dành cho Fanqie
 - `DATA_DIR`: thư mục lưu dữ liệu runtime
 
 ### Quy ước legacy
@@ -143,7 +143,7 @@ Mặc định được tối ưu để chạy ổn trên máy cá nhân và depl
 - `TRANSLATION_PROVIDER=stv` là mặc định cho preview metadata và bản dịch.
 - `FANQIE_API_ENDPOINTS` nên được khai báo rõ trong deploy để tránh rơi nhầm về hành vi không mong muốn.
 - Nếu preview hiện tiếng Trung, kiểm tra lại `.env` runtime trước tiên.
-- Nếu Fanqie trả `429`, kiểm tra legacy binary, endpoint Fanqie, và cấu hình server.
+- Nếu riêng nguồn Fanqie trả `429`, kiểm tra legacy binary, endpoint Fanqie, và cấu hình server.
 
 ## Kiểm Thử Và Build
 
