@@ -351,7 +351,7 @@ export function App(): React.JSX.Element
                             Tải truyện <span className="italic text-primary">đa nguồn</span>
                         </h2>
                         <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
-                            Hỗ trợ chọn Fanqie, Qidian, 69shu và các nguồn khác, đồng thời vẫn giữ luồng Fanqie hiện tại
+                            Hỗ trợ chọn Fanqie, 69shu và các nguồn khác, đồng thời vẫn giữ luồng Fanqie hiện tại
                             để tải bản gốc tiếng Trung, dịch tiếng Việt và lưu trữ vào thư viện cá nhân.
                         </p>
                     </section>

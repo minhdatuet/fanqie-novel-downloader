@@ -86,7 +86,6 @@ Nó cũng:
 `sourceCatalog.ts` khai báo danh sách nguồn:
 
 - Fanqie
-- Qidian
 - 69shu
 - trxs.cc
 - Wikicv

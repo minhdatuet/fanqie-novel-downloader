@@ -15,7 +15,7 @@ Phù hợp cho máy cá nhân, server nhỏ, hoặc môi trường cần một p
 
 ## Tính Năng Chính
 
-- Tải truyện từ nhiều nguồn như Fanqie, Qidian, 69shu, trxs.cc, và Wikicv
+- Tải truyện từ nhiều nguồn như Fanqie, 69shu, trxs.cc, và Wikicv
 - Dịch nội dung sang tiếng Việt qua STV
 - Xem trạng thái job theo thời gian thực bằng SSE
 - Lưu thư viện truyện đã tải để đọc lại hoặc dịch lại
@@ -68,7 +68,6 @@ Sau đó mở:
 Hiện tại hệ thống hỗ trợ nhiều nguồn truyện. Một số nguồn chính:
 
 - Fanqie
-- Qidian
 - 69shu
 - trxs.cc
 - Wikicv

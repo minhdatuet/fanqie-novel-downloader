@@ -83,7 +83,6 @@ Backend nằm ở `apps/backend` và dùng:
 Backend hỗ trợ nhiều nguồn truyện:
 
 - Fanqie
-- Qidian
 - 69shu
 - trxs.cc
 - Wikicv

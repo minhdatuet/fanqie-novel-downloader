@@ -42,11 +42,6 @@ export function formatSourceName(sourceId?: string): string
     return "Fanqie";
   }
 
-  if (normalized === "qidian")
-  {
-    return "Qidian";
-  }
-
   if (normalized === "69shu")
   {
     return "69shu";

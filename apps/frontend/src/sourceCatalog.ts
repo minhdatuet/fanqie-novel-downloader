@@ -10,14 +10,6 @@ export const DEFAULT_SOURCE_CATALOG: SourceInfo[] = [
         supportsTranslate: true
     },
     {
-        displayName: "Qidian",
-        id: "qidian",
-        inputHint: "Nhập link hoặc ID truyện Qidian",
-        requiresAuth: false,
-        supportsSearch: false,
-        supportsTranslate: false
-    },
-    {
         displayName: "69shu",
         id: "69shu",
         inputHint: "Nhập link hoặc ID truyện 69shu",
