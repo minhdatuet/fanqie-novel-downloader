@@ -22,9 +22,14 @@ function readArg(name, fallback)
 function pickAsset(assets)
 {
     const machine = process.arch;
+    const preferMusl = process.platform === "linux";
     const candidates = machine === "arm64"
-        ? [/Linux_arm64/i, /Linux_musl_arm64/i]
-        : [/Linux_amd64/i, /Linux_musl_amd64/i];
+        ? preferMusl
+            ? [/Linux_musl_arm64/i, /Linux_arm64/i]
+            : [/Linux_arm64/i, /Linux_musl_arm64/i]
+        : preferMusl
+            ? [/Linux_musl_amd64/i, /Linux_amd64/i]
+            : [/Linux_amd64/i, /Linux_musl_amd64/i];
 
     for (const pattern of candidates)
     {

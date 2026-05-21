@@ -62,6 +62,7 @@ Mục tiêu là để một AI agent khác có thể làm theo chỉ với SSH p
    ```bash
    npm run legacy:install-linux
    ```
+   Script này trên Linux sẽ ưu tiên asset `Linux_musl_*` để tránh lỗi `GLIBC_2.39 not found`.
 6. Dừng process đang giữ `8787` và `8790`.
 7. Build:
    ```bash

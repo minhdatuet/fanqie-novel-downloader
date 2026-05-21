@@ -64,6 +64,7 @@ npm run legacy:start
 - Trên Linux, legacy binary phải lấy từ release của `zhongbai2333/Tomato-Novel-Downloader` và đặt tại
   `/opt/fanqie-legacy/tomato-novel-downloader`.
 - Có thể cài đúng bản Linux bằng `npm run legacy:install-linux`.
+- Script cài Linux ưu tiên asset `Linux_musl_*` để tránh lỗi phụ thuộc `GLIBC_2.39` trên Ubuntu Server 22.
 - `LEGACY_PORT`: port backend exe gốc cho bridge, mặc định `18424`.
 - `LEGACY_WEB_ADDR`: port Web UI cũ nếu chạy `npm run legacy:start`, mặc định `127.0.0.1:18423`.
 - `TRANSLATION_PROVIDER`: mặc định `stv`; chỉ đặt `mock` khi cần test UI không gọi STV.
