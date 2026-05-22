@@ -441,7 +441,7 @@ function quoteYamlString(value: string): string
 function setYamlList(raw: string, key: string, values: string[]): string
 {
     const blockPattern = new RegExp(
-        `^${escapeRegExp(key)}:\\s*\\r?\\n(?:[ \\t]*-.*(?:\\r?\\n|$))*`,
+        `^${escapeRegExp(key)}:.*(?:\\r?\\n[ \\t]*-.*)*`,
         "gm"
     );
     const serializedValues = values.map((value) => `  - ${value}`).join("\n");
