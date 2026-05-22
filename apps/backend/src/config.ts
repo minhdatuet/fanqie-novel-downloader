@@ -18,7 +18,25 @@ const DEFAULT_FANQIE_API_ENDPOINTS = [
     "https://api5-normal-sinfonlinea.fqnovel.com",
     "https://api5-normal-sinfonlineb.fqnovel.com",
     "https://api5-normal-sinfonlinec.fqnovel.com",
-    "https://api5-normal.fqnovel.com"
+    "https://api5-normal.fqnovel.com",
+    "https://api5-normal-sinfonlinea.fqnovel.com",
+    "https://api5-normal-sinfonlineb.fqnovel.com",
+    "https://api5-normal-sinfonlinec.fqnovel.com",
+    "https://api5-normal.fqnovel.com",
+    "https://api5-normal-sinfonlinea.fqnovel.com",
+    "https://api5-normal-sinfonlineb.fqnovel.com",
+    "https://api5-normal-sinfonlinec.fqnovel.com",
+    "https://api5-normal.fqnovel.com",
+    "https://api5-normal-sinfonlinea.fqnovel.com",
+    "https://api5-normal-sinfonlineb.fqnovel.com",
+    "https://api5-normal-sinfonlinec.fqnovel.com",
+    "https://api5-normal.fqnovel.com",
+    "https://api5-normal-sinfonlinea.fqnovel.com",
+    "https://api5-normal-sinfonlineb.fqnovel.com",
+    "https://api5-normal-sinfonlinec.fqnovel.com",
+    "https://api5-normal.fqnovel.com",
+    "https://api5-normal-sinfonlinea.fqnovel.com",
+    "https://api5-normal-sinfonlineb.fqnovel.com"
 ];
 
 export interface AppConfig
