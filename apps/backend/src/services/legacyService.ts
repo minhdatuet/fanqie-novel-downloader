@@ -442,17 +442,13 @@ function setYamlList(raw: string, key: string, values: string[]): string
 {
     const blockPattern = new RegExp(
         `^${escapeRegExp(key)}:\\s*\\r?\\n(?:[ \\t]*-.*(?:\\r?\\n|$))*`,
-        "m"
+        "gm"
     );
     const serializedValues = values.map((value) => `  - ${value}`).join("\n");
     const block = `${key}:\n${serializedValues}`;
+    const stripped = raw.replace(blockPattern, "").trimEnd();
 
-    if (blockPattern.test(raw))
-    {
-        return raw.replace(blockPattern, `${block}\n`);
-    }
-
-    return `${raw.trimEnd()}\n${block}\n`;
+    return `${stripped}\n${block}\n`;
 }
 
 function escapeRegExp(value: string): string
