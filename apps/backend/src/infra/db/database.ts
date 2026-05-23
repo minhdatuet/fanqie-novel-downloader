@@ -94,6 +94,7 @@ export interface OperationalMetrics
 
 export class DatabaseService
 {
+    private static readonly STALE_RUNNING_JOB_MS = 15 * 60 * 1000;
     private readonly db: DatabaseSync;
     private readonly dataDir: string;
 
@@ -113,7 +114,20 @@ export class DatabaseService
     public recoverRunningJobs(): number
     {
         const now = new Date().toISOString();
-        const result = this.db.prepare(
+        const staleBefore = new Date(Date.now() - DatabaseService.STALE_RUNNING_JOB_MS).toISOString();
+        const markStaleFailed = this.db.prepare(
+            `
+            UPDATE jobs
+            SET
+                status = 'failed',
+                error_message = 'Job đang chạy quá lâu khi khởi động lại, đã được đánh dấu thất bại',
+                finished_at = ?,
+                updated_at = ?
+            WHERE status = 'running'
+              AND updated_at < ?
+            `
+        ).run(now, now, staleBefore);
+        const recoverFreshRunning = this.db.prepare(
             `
             UPDATE jobs
             SET
@@ -123,10 +137,11 @@ export class DatabaseService
                 started_at = NULL,
                 updated_at = ?
             WHERE status = 'running'
+              AND updated_at >= ?
             `
-        ).run(now);
+        ).run(now, staleBefore);
 
-        return Number(result.changes);
+        return Number(markStaleFailed.changes) + Number(recoverFreshRunning.changes);
     }
 
     public claimNextQueuedJob(workerId: string): JobRecord | undefined

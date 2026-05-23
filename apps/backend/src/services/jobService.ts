@@ -44,6 +44,7 @@ interface ChapterProgress
 }
 
 const JOB_CANCELLED_ERROR_MESSAGE = "Job đã bị hủy";
+const ACTIVE_JOB_STALE_MS = 15 * 60 * 1000;
 
 export class JobService
 {
@@ -1025,13 +1026,37 @@ export class JobService
         {
             const jobBookKey = this.resolveJobBookKey(job);
 
-            if (jobBookKey === bookKey && (job.status === "queued" || job.status === "running"))
+            if (jobBookKey === bookKey && this.isFreshActiveJob(job))
             {
                 return job;
             }
         }
 
-        return this.database?.findActiveJobByBookId(bookKey);
+        const databaseJob = this.database?.findActiveJobByBookId(bookKey);
+
+        if (databaseJob && this.isFreshActiveJob(databaseJob))
+        {
+            return databaseJob;
+        }
+
+        return undefined;
+    }
+
+    private isFreshActiveJob(job: JobRecord): boolean
+    {
+        if (job.status !== "queued" && job.status !== "running")
+        {
+            return false;
+        }
+
+        const updatedAt = Date.parse(job.updatedAt);
+
+        if (!Number.isFinite(updatedAt))
+        {
+            return true;
+        }
+
+        return Date.now() - updatedAt <= ACTIVE_JOB_STALE_MS;
     }
 
     private resolveJobBookKey(job: JobRecord): string | undefined
