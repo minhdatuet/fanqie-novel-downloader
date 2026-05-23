@@ -124,7 +124,7 @@ LEGACY_HOST=127.0.0.1
 LEGACY_PORT=18424
 LEGACY_EXE_PATH=/opt/fanqie-legacy/tomato-novel-downloader
 LEGACY_DATA_DIR=/home/administrator/tomato-downloader/storage/legacy
-DATA_DIR=/home/administrator/tomato-downloader/storage
+DATA_DIR=/opt/fanqie-novel-downloader/storage
 TRANSLATION_PROVIDER=stv
 STV_API_URL=https://comic.sangtacvietcdn.xyz/tsm.php
 FANQIE_API_ENDPOINTS=https://api5-normal-sinfonlinea.fqnovel.com,https://api5-normal-sinfonlineb.fqnovel.com,https://api5-normal-sinfonlinec.fqnovel.com,https://api5-normal.fqnovel.com
@@ -155,8 +155,8 @@ set_kv() {
 set_kv ADMIN_PORT 8790
 set_kv TRANSLATION_PROVIDER stv
 set_kv LEGACY_EXE_PATH /opt/fanqie-legacy/tomato-novel-downloader
-set_kv DATA_DIR /home/administrator/tomato-downloader/storage
-set_kv LEGACY_DATA_DIR /home/administrator/tomato-downloader/storage/legacy
+set_kv DATA_DIR /opt/fanqie-novel-downloader/storage
+set_kv LEGACY_DATA_DIR /opt/fanqie-novel-downloader/storage/legacy
 ```
 
 ## 5. Legacy Binary Trên Linux
@@ -183,19 +183,20 @@ ls -l /opt/fanqie-legacy/tomato-novel-downloader
 
 ## 6. Quyền Thư Mục Runtime
 
-Backend dùng SQLite trong `storage/`. Nếu thư mục này thuộc `root`, backend chạy bằng `administrator` sẽ không mở được database.
+Backend dùng SQLite trong `storage/`. Trên server hiện tại, dữ liệu thật đang nằm ở `/opt/fanqie-novel-downloader/storage`.
+Nếu backend trỏ sang một `storage/` rỗng ở checkout khác, thư viện sẽ trông như bị mất.
 
 Kiểm tra quyền:
 
 ```bash
-ls -la ~/tomato-downloader/storage
+ls -la /opt/fanqie-novel-downloader/storage
 ```
 
 Nếu cần, sửa quyền:
 
 ```bash
 sudo -i
-chown -R administrator:administrator /home/administrator/tomato-downloader/storage
+chown -R administrator:administrator /opt/fanqie-novel-downloader/storage
 exit
 ```
 
@@ -356,9 +357,9 @@ Nguyên nhân thường là một trong các lỗi sau:
 Cách xử lý:
 
 ```bash
-mkdir -p /home/administrator/tomato-downloader/storage/legacy
+mkdir -p /opt/fanqie-novel-downloader/storage/legacy
 sudo -i
-chown -R administrator:administrator /home/administrator/tomato-downloader/storage
+chown -R administrator:administrator /opt/fanqie-novel-downloader/storage
 exit
 ```
 

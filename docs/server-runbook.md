@@ -40,6 +40,8 @@ Quy trình deploy chi tiết nằm ở [Quy Trình Deploy](./deploy-process.md).
   - [ ] `TRANSLATION_PROVIDER=stv`
   - [ ] `STV_API_URL=https://comic.sangtacvietcdn.xyz/tsm.php`
   - [ ] `FANQIE_API_ENDPOINTS` được khai báo rõ hoặc backend đang fallback pool mặc định
+  - [ ] `DATA_DIR=/opt/fanqie-novel-downloader/storage`
+  - [ ] `LEGACY_DATA_DIR=/opt/fanqie-novel-downloader/storage/legacy`
 - [ ] Dừng mọi process đang giữ `8787` và `8790`.
 - [ ] Nếu đang dùng worktree deploy, chuyển sang `~/tomato-downloader-deploy`.
 - [ ] Chạy build:
@@ -58,6 +60,7 @@ Quy trình deploy chi tiết nằm ở [Quy Trình Deploy](./deploy-process.md).
 - [ ] Xác nhận `TRANSLATION_PROVIDER=stv` thật sự đã được nạp vào runtime.
 - [ ] Xác nhận `STV_API_URL` còn truy cập được.
 - [ ] Xác nhận `FANQIE_API_ENDPOINTS` được khai báo rõ hoặc backend đang fallback pool mặc định.
+- [ ] Xác nhận `DATA_DIR=/opt/fanqie-novel-downloader/storage`.
 - [ ] Xác nhận legacy config không còn `use_official_api=true` nếu bạn muốn override endpoint.
 - [ ] Xác nhận `STV_API_KEY` nếu môi trường đó bắt buộc.
 - [ ] Xác nhận binary đang chạy đúng là bản Linux từ release của `zhongbai2333/Tomato-Novel-Downloader`.
