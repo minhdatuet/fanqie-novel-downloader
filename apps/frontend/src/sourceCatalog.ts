@@ -10,6 +10,14 @@ export const DEFAULT_SOURCE_CATALOG: SourceInfo[] = [
         supportsTranslate: true
     },
     {
+        displayName: "Qimao",
+        id: "qimao",
+        inputHint: "Nhập link qimao.com/shuku/... hoặc Book ID Qimao",
+        requiresAuth: false,
+        supportsSearch: false,
+        supportsTranslate: true
+    },
+    {
         displayName: "69shu",
         id: "69shu",
         inputHint: "Nhập link hoặc ID truyện 69shu",

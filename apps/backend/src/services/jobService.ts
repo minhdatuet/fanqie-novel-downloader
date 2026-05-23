@@ -26,6 +26,7 @@ import { BookMetadataTranslationService } from "./bookMetadataTranslationService
 import { FanqieService } from "./fanqieService.js";
 import { LegacyOutputLocatorService } from "./legacyOutputLocatorService.js";
 import { LegacyService } from "./legacyService.js";
+import { QimaoService } from "./qimaoService.js";
 import { SixtyNineShuService } from "./sixtyNineShuService.js";
 import { TrxsService } from "./trxsService.js";
 import { WikicvService } from "./wikicvService.js";
@@ -60,6 +61,7 @@ export class JobService
     private readonly legacyJobMap = new Map<string, number>();
     private readonly _legacyOutputLocator: LegacyOutputLocatorService;
     private readonly library: LibraryService;
+    private readonly qimao: QimaoService;
     private readonly sixtyNineShu: SixtyNineShuService;
     private readonly trxs: TrxsService;
     private readonly wikicv: WikicvService;
@@ -85,6 +87,7 @@ export class JobService
         this.database = database;
         this.fanqie = new FanqieService(config);
         this.legacy = new LegacyService(config);
+        this.qimao = new QimaoService(config);
         this.sixtyNineShu = new SixtyNineShuService(config);
         this.trxs = new TrxsService(config);
         this.wikicv = new WikicvService(config);
@@ -985,6 +988,8 @@ export class JobService
         {
             case "69shu":
                 return this.sixtyNineShu.preparePlan(input);
+            case "qimao":
+                return this.qimao.preparePlan(input);
             case "trxs":
                 return this.trxs.preparePlan(input);
             case "wikicv":
@@ -1009,6 +1014,8 @@ export class JobService
         {
             case "69shu":
                 return this.sixtyNineShu.downloadPlan(plan, onProgress);
+            case "qimao":
+                return this.qimao.downloadPlan(plan, onProgress);
             case "trxs":
                 return this.trxs.downloadPlan(plan, onProgress);
             case "wikicv":
@@ -1101,6 +1108,8 @@ export class JobService
         {
             case "69shu":
                 return this.sixtyNineShu.parseBookId(input);
+            case "qimao":
+                return this.qimao.parseBookId(input);
             case "trxs":
                 return this.trxs.parseBookId(input);
             case "wikicv":

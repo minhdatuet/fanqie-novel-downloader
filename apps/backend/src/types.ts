@@ -34,6 +34,7 @@ export interface BookInfo
 export interface ChapterRef
 {
     id: string;
+    isVip?: boolean;
     title: string;
     url?: string;
 }

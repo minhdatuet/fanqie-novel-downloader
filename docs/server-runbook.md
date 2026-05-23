@@ -2,6 +2,15 @@
 
 Checklist ngắn để AI agent hoặc người vận hành deploy và restart server mà không làm lệch cấu hình.
 
+## Thông Tin Kết Nối
+
+- Host: `93.127.134.70`
+- Port SSH: `10049`
+- Tên đăng nhập: `administrator`
+- Hệ điều hành: `Ubuntu Server 22 LTS 64-bit`
+- Quyền nâng cấp: có thể dùng `sudo -i` để chuyển sang `root`
+- Mật khẩu: không lưu trong tài liệu, sẽ nhập thủ công khi cần
+
 ## Mục Tiêu
 
 - Luôn chạy backend từ worktree sạch.

@@ -10,6 +10,14 @@ const SOURCE_CATALOG: SourceInfo[] = [
         supportsTranslate: true
     },
     {
+        displayName: "Qimao",
+        id: "qimao",
+        inputHint: "Nhập link qimao.com/shuku/... hoặc Book ID Qimao",
+        requiresAuth: false,
+        supportsSearch: false,
+        supportsTranslate: true
+    },
+    {
         displayName: "69shu",
         id: "69shu",
         inputHint: "Nhập link hoặc ID truyện 69shu",
@@ -74,6 +82,11 @@ export function detectSourceIdFromInput(input: string): string | undefined
         return "fanqie";
     }
 
+    if (normalizedInput.includes("qimao.com") || normalizedInput.includes("qimao"))
+    {
+        return "qimao";
+    }
+
     if (
         normalizedInput.includes("69shuba.com")
         || normalizedInput.includes("69shuba.cx")
@@ -101,7 +114,6 @@ export function detectSourceIdFromInput(input: string): string | undefined
 
     return undefined;
 }
-
 
 export function getSourceById(sourceId: string | undefined): SourceInfo | undefined
 {
