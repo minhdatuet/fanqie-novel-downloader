@@ -1,6 +1,7 @@
 # Sổ Tay Vận Hành Server
 
 Checklist ngắn để AI agent hoặc người vận hành deploy và restart server mà không làm lệch cấu hình.
+Quy trình deploy chi tiết nằm ở [Quy Trình Deploy](./deploy-process.md).
 
 ## Thông Tin Kết Nối
 
