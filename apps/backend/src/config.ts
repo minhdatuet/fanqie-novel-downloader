@@ -14,6 +14,10 @@ const DEFAULT_TRANSLATION_PARAGRAPH_BATCH_PAUSE_MS = 200;
 const DEFAULT_TRANSLATION_PARAGRAPH_BATCH_SIZE = 20;
 const DEFAULT_TRANSLATION_SINGLE_PARAGRAPH_PAUSE_MS = 80;
 const DEFAULT_DAILY_JOB_QUOTA = 20;
+const DEFAULT_RATE_LIMIT_DOWNLOAD_LIMIT = 8;
+const DEFAULT_RATE_LIMIT_DOWNLOAD_WINDOW_MS = 10 * 60_000;
+const DEFAULT_RATE_LIMIT_TRANSLATE_LIMIT = 6;
+const DEFAULT_RATE_LIMIT_TRANSLATE_WINDOW_MS = 10 * 60_000;
 const DEFAULT_FANQIE_API_ENDPOINTS = [
     "https://api5-normal-sinfonlinea.fqnovel.com",
     "https://api5-normal-sinfonlineb.fqnovel.com",
@@ -71,6 +75,10 @@ export interface AppConfig
     stvModel: string;
     translationProvider: "mock" | "stv";
     webOrigin: string;
+    rateLimitDownloadLimit: number;
+    rateLimitDownloadWindowMs: number;
+    rateLimitTranslateLimit: number;
+    rateLimitTranslateWindowMs: number;
 }
 
 function workspaceRoot(): string
@@ -257,7 +265,11 @@ export function loadConfig(): AppConfig
         stvApiUrl: process.env.STV_API_URL ?? "",
         stvModel: process.env.STV_MODEL ?? "",
         translationProvider,
-        webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:5173"
+        webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:5173",
+        rateLimitDownloadLimit: Math.max(1, readNumber("RATE_LIMIT_DOWNLOAD_LIMIT", DEFAULT_RATE_LIMIT_DOWNLOAD_LIMIT)),
+        rateLimitDownloadWindowMs: Math.max(1, readNumber("RATE_LIMIT_DOWNLOAD_WINDOW_MS", DEFAULT_RATE_LIMIT_DOWNLOAD_WINDOW_MS)),
+        rateLimitTranslateLimit: Math.max(1, readNumber("RATE_LIMIT_TRANSLATE_LIMIT", DEFAULT_RATE_LIMIT_TRANSLATE_LIMIT)),
+        rateLimitTranslateWindowMs: Math.max(1, readNumber("RATE_LIMIT_TRANSLATE_WINDOW_MS", DEFAULT_RATE_LIMIT_TRANSLATE_WINDOW_MS))
     };
 }
 

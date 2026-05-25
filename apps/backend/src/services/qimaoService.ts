@@ -238,7 +238,7 @@ export class QimaoService
 
     private async createContextAsync(browser: Browser): Promise<BrowserContext>
     {
-        return browser.newContext({
+        const context = await browser.newContext({
             extraHTTPHeaders: {
                 "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7"
             },
@@ -249,6 +249,17 @@ export class QimaoService
                 width: 1280
             }
         });
+
+        await context.route("**/*", (route) => {
+            const type = route.request().resourceType();
+            if (["image", "stylesheet", "font", "media", "svg"].includes(type)) {
+                void route.abort();
+            } else {
+                void route.continue();
+            }
+        });
+
+        return context;
     }
 
     private parseBookInfo(html: string, bookId: string): BookInfo

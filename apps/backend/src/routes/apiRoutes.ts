@@ -173,6 +173,16 @@ export async function registerApiRoutes(
     adminPortalToken: string
 ): Promise<void>
 {
+    const downloadRateLimit: RateLimitRule = {
+        limit: config.rateLimitDownloadLimit,
+        windowMs: config.rateLimitDownloadWindowMs
+    };
+
+    const translateRateLimit: RateLimitRule = {
+        limit: config.rateLimitTranslateLimit,
+        windowMs: config.rateLimitTranslateWindowMs
+    };
+
     app.get("/api/health", async () => ({
         ok: true
     }));
@@ -257,7 +267,7 @@ export async function registerApiRoutes(
     app.post<{ Body: DownloadBody }>(
         "/api/jobs/download",
         {
-            preHandler: createRateLimitPreHandler(spamGuard, "jobs-download", DOWNLOAD_RATE_LIMIT),
+            preHandler: createRateLimitPreHandler(spamGuard, "jobs-download", downloadRateLimit),
             schema: {
                 body: downloadBodySchema
             }
@@ -312,7 +322,7 @@ export async function registerApiRoutes(
     app.post<{ Params: JobIdParams }>(
         "/api/jobs/:id/translate",
         {
-            preHandler: createRateLimitPreHandler(spamGuard, "jobs-translate", TRANSLATE_RATE_LIMIT),
+            preHandler: createRateLimitPreHandler(spamGuard, "jobs-translate", translateRateLimit),
             schema: {
                 params: jobIdParamsSchema
             }
@@ -628,7 +638,7 @@ export async function registerApiRoutes(
     app.post<{ Params: BookIdParams }>(
         "/api/library/:bookId/translate",
         {
-            preHandler: createRateLimitPreHandler(spamGuard, "library-translate", TRANSLATE_RATE_LIMIT),
+            preHandler: createRateLimitPreHandler(spamGuard, "library-translate", translateRateLimit),
             schema: {
                 params: libraryBookIdParamsSchema
             }

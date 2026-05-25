@@ -25,7 +25,7 @@ import { JobArtifactService } from "./jobArtifactService.js";
 import { BookMetadataTranslationService } from "./bookMetadataTranslationService.js";
 import { FanqieService } from "./fanqieService.js";
 import { LegacyOutputLocatorService } from "./legacyOutputLocatorService.js";
-import { LegacyService } from "./legacyService.js";
+import { LegacyService, type LegacyJob } from "./legacyService.js";
 import { QimaoService } from "./qimaoService.js";
 import { SixtyNineShuService } from "./sixtyNineShuService.js";
 import { TrxsService } from "./trxsService.js";
@@ -75,6 +75,9 @@ export class JobService
     private isClosed = false;
     private pumpQueuedJobsPending = false;
     private pumpQueuedJobsRunning = false;
+    private readonly pendingPersists = new Map<string, { timer: NodeJS.Timeout; job: JobRecord }>();
+    private readonly activeLegacyJobs = new Map<string, { legacyJobId: number; plan: DownloadPlan; translatedBook: BookInfo }>();
+    private globalLegacyPollerTimer?: NodeJS.Timeout;
 
     public constructor(
         config: AppConfig,
@@ -284,6 +287,13 @@ export class JobService
     {
         this.isClosed = true;
         clearInterval(this.queueTimer);
+        this.stopGlobalLegacyPoller();
+        for (const [id, pending] of this.pendingPersists.entries())
+        {
+            clearTimeout(pending.timer);
+            void this.executePersistAsync(pending.job);
+        }
+        this.pendingPersists.clear();
     }
 
     public cancelJob(jobId: string): JobRecord
@@ -462,7 +472,6 @@ export class JobService
     {
         try
         {
-            let lastProgressCurrent = 0;
             this.throwIfCancelled(jobId);
             this.update(jobId, {
                 progress: workingProgress(0, 1, "Đang khởi động lõi tải"),
@@ -475,108 +484,199 @@ export class JobService
             this.throwIfCancelled(jobId);
             this.update(jobId, {
                 book: translatedBook,
-                        progress: workingProgress(0, translatedBook.chapterCount || 1, "Đã lấy thông tin truyện")
+                progress: workingProgress(0, translatedBook.chapterCount || 1, "Đã lấy thông tin truyện")
             });
 
             const legacyJob = await this.legacy.createDownloadJob(input);
             this.legacyJobMap.set(jobId, legacyJob.id);
 
-            for (;;)
+            // Register this job to the global polling registry
+            this.activeLegacyJobs.set(jobId, { legacyJobId: legacyJob.id, plan, translatedBook });
+            this.startGlobalLegacyPollerIfNeeded();
+
+            try
             {
-                this.throwIfCancelled(jobId);
-                const current = await this.legacy.getLegacyJob(legacyJob.id);
-                this.throwIfCancelled(jobId);
-
-                if (current)
+                // Wait for the job to reach completed, failed, or canceled state via event emitter
+                await new Promise<void>((resolvePromise, rejectPromise) =>
                 {
-                    const mappedProgress = this.legacy.mapProgress(current);
-
-                    if (mappedProgress.current < lastProgressCurrent)
+                    const checkState = (nextJob: JobRecord) =>
                     {
-                        await sleep(1200);
-                        continue;
-                    }
-
-                    lastProgressCurrent = mappedProgress.current;
-                    this.update(jobId, {
-                        progress: workingProgress(mappedProgress.current, mappedProgress.total, mappedProgress.message)
-                    });
-
-                    if (current.title || current.author)
-                    {
-                        this.update(jobId, {
-                            book: {
-                                ...translatedBook,
-                                author: current.author ?? translatedBook.author
-                            }
-                        });
-                    }
-
-                    if (current.state === "done")
-                    {
-                        this.throwIfCancelled(jobId);
-                        const originalPath = await this._legacyOutputLocator.resolveOriginalPathAsync(
-                            current.book_id,
-                            plan.book.title
-                        );
-
-                        if (!originalPath)
+                        if (nextJob.status === "completed")
                         {
-                            throw new Error("Đã tải xong nhưng không tìm thấy file TXT đầu ra");
+                            unsubscribe();
+                            resolvePromise();
                         }
-
-                        const chapters = await this.artifacts.loadChaptersFromPathAsync(originalPath);
-                        if (chapters.length === 0)
+                        else if (nextJob.status === "failed" || nextJob.status === "canceled")
                         {
-                            throw new Error("Không đọc được nội dung từ file TXT đầu ra");
+                            unsubscribe();
+                            rejectPromise(new Error(nextJob.error || "Job legacy thất bại"));
                         }
+                    };
 
-                        this.throwIfCancelled(jobId);
-                        this.update(jobId, {
-                            progress: postProcessProgress(chapters.length, "Đang ghi file TXT bản gốc")
-                        });
-                        const savedOriginalPath = await this.artifacts.saveDownloadedBookAsync(
-                            jobId,
-                            plan.book,
-                            chapters,
-                            translatedBook,
-                            (message) =>
-                            {
-                                this.update(jobId, {
-                                    progress: postProcessProgress(chapters.length, message)
-                                });
-                            }
-                        );
-                        this.recordJobEvent(jobId, "info", "Đã ghi file đầu ra", {
-                            output: savedOriginalPath
-                        });
-                        this.library.invalidate();
+                    const unsubscribe = this.onJobUpdate(jobId, checkState);
 
-                        const isVi = plan.book.language === "vi";
-                        this.update(jobId, {
-                            files: isVi ? { translatedTxt: savedOriginalPath } : { originalTxt: savedOriginalPath },
-                            outputFormat: "txt",
-                            progress: progress(chapters.length + 1, chapters.length + 1, isVi ? "Đã tải xong bản tiếng Việt" : "Đã tải xong bản tiếng Trung"),
-                            status: "completed"
-                        });
-                        this.recordJobEvent(jobId, "info", "Job tải đã hoàn tất", {
-                            output: savedOriginalPath
-                        });
-                        return;
-                    }
-
-                    if (current.state === "failed" || current.state === "canceled")
+                    // Immediate state check
+                    const currentJob = this.getJob(jobId);
+                    if (currentJob && ["completed", "failed", "canceled"].includes(currentJob.status))
                     {
-                        throw new Error(current.message || `Legacy job ${current.state}`);
+                        unsubscribe();
+                        if (currentJob.status === "completed")
+                        {
+                            resolvePromise();
+                        }
+                        else
+                        {
+                            rejectPromise(new Error(currentJob.error || "Job legacy thất bại"));
+                        }
                     }
-                }
-
-                await sleep(1200);
+                });
+            }
+            finally
+            {
+                this.activeLegacyJobs.delete(jobId);
             }
         }
         catch (error)
         {
             this.fail(jobId, error);
+        }
+    }
+
+    private startGlobalLegacyPollerIfNeeded(): void
+    {
+        if (this.globalLegacyPollerTimer)
+        {
+            return;
+        }
+
+        this.globalLegacyPollerTimer = setInterval(() =>
+        {
+            void this.pollActiveLegacyJobsAsync();
+        }, 1500);
+    }
+
+    private stopGlobalLegacyPoller(): void
+    {
+        if (this.globalLegacyPollerTimer)
+        {
+            clearInterval(this.globalLegacyPollerTimer);
+            this.globalLegacyPollerTimer = undefined;
+        }
+    }
+
+    private async pollActiveLegacyJobsAsync(): Promise<void>
+    {
+        if (this.activeLegacyJobs.size === 0)
+        {
+            this.stopGlobalLegacyPoller();
+            return;
+        }
+
+        try
+        {
+            const allLegacyJobs = await this.legacy.getAllLegacyJobsAsync();
+            const legacyJobMap = new Map<number, LegacyJob>();
+            for (const lj of allLegacyJobs)
+            {
+                legacyJobMap.set(lj.id, lj);
+            }
+
+            for (const [jobId, record] of this.activeLegacyJobs.entries())
+            {
+                try
+                {
+                    this.throwIfCancelled(jobId);
+                    const current = legacyJobMap.get(record.legacyJobId);
+
+                    if (current)
+                    {
+                        const mappedProgress = this.legacy.mapProgress(current);
+
+                        this.update(jobId, {
+                            progress: workingProgress(mappedProgress.current, mappedProgress.total, mappedProgress.message)
+                        });
+
+                        if (current.title || current.author)
+                        {
+                            this.update(jobId, {
+                                book: {
+                                    ...record.translatedBook,
+                                    author: current.author ?? record.translatedBook.author
+                                }
+                            });
+                        }
+
+                        if (current.state === "done")
+                        {
+                            this.throwIfCancelled(jobId);
+                            const originalPath = await this._legacyOutputLocator.resolveOriginalPathAsync(
+                                current.book_id,
+                                record.plan.book.title
+                            );
+
+                            if (!originalPath)
+                            {
+                                throw new Error("Đã tải xong nhưng không tìm thấy file TXT đầu ra");
+                            }
+
+                            const chapters = await this.artifacts.loadChaptersFromPathAsync(originalPath);
+                            if (chapters.length === 0)
+                            {
+                                throw new Error("Không đọc được nội dung từ file TXT đầu ra");
+                            }
+
+                            this.throwIfCancelled(jobId);
+                            this.update(jobId, {
+                                progress: postProcessProgress(chapters.length, "Đang ghi file TXT bản gốc")
+                            });
+                            const savedOriginalPath = await this.artifacts.saveDownloadedBookAsync(
+                                jobId,
+                                record.plan.book,
+                                chapters,
+                                record.translatedBook,
+                                (message) =>
+                                {
+                                    this.update(jobId, {
+                                        progress: postProcessProgress(chapters.length, message)
+                                    });
+                                }
+                            );
+                            this.recordJobEvent(jobId, "info", "Đã ghi file đầu ra", {
+                                output: savedOriginalPath
+                            });
+                            this.library.invalidate();
+
+                            const isVi = record.plan.book.language === "vi";
+                            this.update(jobId, {
+                                files: isVi ? { translatedTxt: savedOriginalPath } : { originalTxt: savedOriginalPath },
+                                outputFormat: "txt",
+                                progress: progress(chapters.length + 1, chapters.length + 1, isVi ? "Đã tải xong bản tiếng Việt" : "Đã tải xong bản tiếng Trung"),
+                                status: "completed"
+                            });
+                            this.recordJobEvent(jobId, "info", "Job tải đã hoàn tất", {
+                                output: savedOriginalPath
+                            });
+                        }
+                        else if (current.state === "failed" || current.state === "canceled")
+                        {
+                            throw new Error(current.message || `Legacy job ${current.state}`);
+                        }
+                    }
+                }
+                catch (error)
+                {
+                    this.fail(jobId, error);
+                }
+            }
+        }
+        catch (error)
+        {
+            console.error("Lỗi khi poll legacy jobs:", error);
+        }
+
+        if (this.activeLegacyJobs.size === 0)
+        {
+            this.stopGlobalLegacyPoller();
         }
     }
 
@@ -828,12 +928,56 @@ export class JobService
 
         const latest = this.jobs.get(job.id);
         const snapshot = latest && latest.updatedAt >= job.updatedAt ? latest : job;
+
+        const isTerminal = ["completed", "failed", "canceled"].includes(snapshot.status);
+
+        const pending = this.pendingPersists.get(snapshot.id);
+        if (pending)
+        {
+            if (isTerminal)
+            {
+                clearTimeout(pending.timer);
+                this.pendingPersists.delete(snapshot.id);
+            }
+            else
+            {
+                pending.job = snapshot;
+                return;
+            }
+        }
+
+        if (isTerminal)
+        {
+            await this.executePersistAsync(snapshot);
+        }
+        else
+        {
+            const timer = setTimeout(() =>
+            {
+                const currentPending = this.pendingPersists.get(snapshot.id);
+                if (currentPending)
+                {
+                    this.pendingPersists.delete(snapshot.id);
+                    void this.executePersistAsync(currentPending.job);
+                }
+            }, 2500);
+            this.pendingPersists.set(snapshot.id, { timer, job: snapshot });
+        }
+    }
+
+    private async executePersistAsync(job: JobRecord): Promise<void>
+    {
+        if (this.isClosed)
+        {
+            return;
+        }
+
         const path = resolve(this.config.dataDir, "jobs", `${job.id}.json`);
-        await writeJsonFile(path, snapshot).catch(() => undefined);
+        await writeJsonFile(path, job).catch(() => undefined);
 
         try
         {
-            this.database?.upsertJob(snapshot);
+            this.database?.upsertJob(job);
         }
         catch
         {

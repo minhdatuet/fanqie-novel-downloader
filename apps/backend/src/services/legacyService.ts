@@ -23,7 +23,7 @@ interface LegacyPreview
     tags?: string[];
 }
 
-interface LegacyJob
+export interface LegacyJob
 {
     author?: string;
     book_id: string;
@@ -144,6 +144,13 @@ export class LegacyService
         await this.ensureRunning();
         const jobs = await this.requestJson<LegacyJobsResponse>("/api/jobs");
         return jobs.items.find((item) => item.id === id);
+    }
+
+    public async getAllLegacyJobsAsync(): Promise<LegacyJob[]>
+    {
+        await this.ensureRunning();
+        const jobs = await this.requestJson<LegacyJobsResponse>("/api/jobs");
+        return jobs.items || [];
     }
 
     public mapProgress(job: LegacyJob): ProgressState

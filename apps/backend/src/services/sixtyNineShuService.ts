@@ -95,6 +95,14 @@ export class SixtyNineShuService
                     userAgent: USER_AGENT,
                     viewport: { height: 1600, width: 1280 }
                 });
+                await context.route("**/*", (route) => {
+                    const type = route.request().resourceType();
+                    if (["image", "stylesheet", "font", "media", "svg"].includes(type)) {
+                        void route.abort();
+                    } else {
+                        void route.continue();
+                    }
+                });
                 const page = await context.newPage();
                 await page.addInitScript(() => {
                     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -220,6 +228,14 @@ export class SixtyNineShuService
                 locale: "zh-CN",
                 userAgent: USER_AGENT,
                 viewport: { height: 1600, width: 1280 }
+            });
+            await context.route("**/*", (route) => {
+                const type = route.request().resourceType();
+                if (["image", "stylesheet", "font", "media", "svg"].includes(type)) {
+                    void route.abort();
+                } else {
+                    void route.continue();
+                }
             });
 
             // 1. Prime browser session (Establish Cloudflare session cookies)
