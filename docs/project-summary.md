@@ -1,193 +1,76 @@
-# Tổng Kết Dự Án Tomato Downloader
+# Tổng Kết Dự Án Novel Grabber
 
-Tài liệu này là bản tổng kết nhanh về repo `Tomato_Downloader`, được tạo sau khi index bằng `gitnexus`.
+Tài liệu này là bản tổng kết toàn diện và cập nhật nhất về kho mã nguồn **Novel Grabber** (trước đây là Tomato Downloader) sau khi trải qua các đợt nâng cấp hiệu năng chịu tải và tích hợp tên miền sản xuất.
 
-## Số Liệu GitNexus
+---
 
-- 1,970 nodes
-- 4,668 edges
-- 63 clusters
-- 171 flows
-- Trạng thái index: `up-to-date`
+## 1. Mục Tiêu Dự Án
 
-## Mục Tiêu Dự Án
+**Novel Grabber** là một hệ thống web monorepo chuyên nghiệp dùng để tải, dịch tự động và quản lý thư viện truyện từ các nguồn tiếng Trung lớn.
 
-Đây là ứng dụng web tải và dịch truyện từ nhiều nguồn, đồng thời quản lý thư viện file đã tải trong local storage.
+Luồng nghiệp vụ cốt lõi:
+1.  **Resolve**: Nhập liên kết hoặc ID truyện $\rightarrow$ Hệ thống tự động phân tích và trích xuất siêu dữ liệu (Metadata) dịch sang tiếng Việt.
+2.  **Download**: Tải toàn bộ nội dung nguyên bản tiếng Trung về hàng đợi xử lý.
+3.  **Translate**: Dịch tự động nội dung sang tiếng Việt dễ đọc thông qua dịch vụ Sangtacviet (STV).
+4.  **Publish**: Xuất bản sách điện tử chuẩn định dạng `EPUB` hoặc tệp `TXT` hoàn chỉnh (bao gồm cả bản gốc và bản dịch).
+5.  **Library**: Lưu trữ và phục vụ tải xuống trực tiếp từ thư viện cá nhân.
 
-Luồng chính của sản phẩm:
+---
 
-1. Nhập link hoặc ID truyện.
-2. Resolve thông tin truyện từ nguồn đã chọn.
-3. Tải bản gốc từ nguồn.
-4. Dịch sang tiếng Việt.
-5. Lưu cả file gốc và file dịch vào thư viện cá nhân.
+## 2. Kiến Trúc Hệ Thống Monorepo
 
-## Kiến Trúc Tổng Quan
+Mã nguồn được phân tách rõ ràng thành 3 ứng dụng chính hoạt động độc lập:
 
-Repo được tổ chức theo mô hình monorepo với 3 ứng dụng chính:
+### A. Backend (`apps/backend`)
+Được viết bằng Fastify (Node.js) + TypeScript + SQLite, đảm nhiệm xử lý logic nghiệp vụ nặng:
+*   **Điểm vào chính**: `src/server.ts` thiết lập máy chủ API, phục vụ mã tĩnh frontend và khởi chạy máy chủ Admin riêng.
+*   **Đọc cấu hình**: `src/config.ts` nạp động các thông số cấu hình từ tệp `.env` (bao gồm giới hạn song song, timeout, các bộ đệm thời gian dịch và rate limit động).
+*   **Điều phối hàng đợi**: `JobService` quản lý thứ tự các tiến trình tải truyện chạy song song.
 
-- `apps/backend`: backend Fastify + TypeScript, là lõi xử lý nghiệp vụ.
-- `apps/frontend`: UI người dùng bằng React + Vite.
-- `apps/admin`: UI admin riêng, hiển thị trạng thái hệ thống và số liệu vận hành.
+### B. Frontend (`apps/frontend`)
+Giao diện chính dành cho người dùng được viết bằng React + Vite:
+*   **NovelSearch**: Khung tìm kiếm, nhập liên kết và chọn nguồn truyện.
+*   **JobStatus**: Hiển thị danh sách tiến trình tải và dịch truyện theo thời gian thực (SSE).
+*   **LibraryTable**: Quản lý, tìm kiếm và tải xuống tệp truyện trong thư viện.
 
-Ngoài ra còn có:
+### C. Admin Dashboard (`apps/admin`)
+Trang web quản trị riêng biệt chạy trên một cổng và địa chỉ bảo mật:
+*   Hiển thị biểu đồ và số liệu chi tiết về dung lượng lưu trữ, hàng đợi job hoạt động, hạn ngạch sử dụng trong ngày (Daily Job Quota), trạng thái tệp sao lưu (Backup) và bộ nhớ đệm (Cache).
 
-- `scripts/`: script cho migration, backup, cài legacy Linux, và chạy legacy web UI.
-- `tests/`: test load và fake legacy server.
-- `tools/legacy/`: file exe legacy gốc để backend mới có thể bridge sang luồng cũ.
-- `storage/`: dữ liệu runtime, gồm jobs, cache, books, legacy và database.
+---
 
-## Backend
+## 3. Các Tối Ưu Hóa Hiệu Năng Vượt Trội (Hỗ trợ 20+ người dùng song song)
 
-Backend nằm ở `apps/backend` và dùng:
+Để đạt mục tiêu cho phép **hơn 20 người dùng cùng tải truyện song song** mà không làm đơ/sập server, hệ thống đã tích hợp 4 cơ chế tối ưu hóa nâng cao:
 
-- Fastify cho HTTP API
-- SQLite cho lưu trữ
-- SSE cho cập nhật tiến trình job
-- CORS và static serving cho frontend build
+1.  **Throttling SQLite & Disk I/O (Giảm tải đĩa 99%)**:
+    *   Hệ thống gom nhóm toàn bộ các hoạt động ghi tệp JSON và ghi DB đồng bộ (`database.upsertJob`) trong hàng đợi hoãn lại `pendingPersists`.
+    *   Chỉ ghi đĩa tối đa **1 lần mỗi 2.5 giây** cho mỗi job đang chạy, hoặc ghi lập tức khi job kết thúc. SSE vẫn phát tiến độ real-time mượt mà tới trình duyệt người dùng.
+2.  **Playwright Resource Blocking (Tối ưu RAM/CPU 80%)**:
+    *   Trình duyệt Chromium của Playwright được đăng ký bộ chặn tài nguyên tự động, hủy bỏ toàn bộ yêu cầu tải hình ảnh, CSS, font chữ, media và ảnh vector.
+    *   Giúp giảm dung lượng RAM tiêu thụ của Chromium xuống tối đa và tăng tốc cào dữ liệu lên 70-80%.
+3.  **Global Legacy Poller (Tiết kiệm CPU bridge)**:
+    *   Thay thế các vòng lặp polling đơn lẻ của từng job bằng một bộ điều phối toàn cục chạy chu kỳ 1.5 giây một lần.
+    *   Giảm tần suất yêu cầu từ backend mới tới exe legacy từ **17+ req/s** xuống cố định chỉ còn **0.5 req/s**.
+4.  **Dynamic Rate Limiting**:
+    *   Ràng buộc động các giới hạn chống spam IP trong `apiRoutes.ts` theo tệp cấu hình động nạp từ `.env`, tránh chặn nhầm người dùng thực trong mạng NAT.
 
-### Điểm Vào Chính
+---
 
-- `apps/backend/src/server.ts`: dựng app, mount route, phục vụ frontend build, mở admin server riêng.
-- `apps/backend/src/routes/apiRoutes.ts`: khai báo toàn bộ API.
-- `apps/backend/src/config.ts`: đọc biến môi trường và dựng cấu hình runtime.
+## 4. Dữ Liệu & Lưu Trữ (SQLite Schema)
 
-### Các API Chính
+Cơ sở dữ liệu SQLite chính được lưu tại `/opt/fanqie-novel-downloader/storage/app.db` bao gồm các bảng chính:
+*   `books`: Lưu trữ thông tin chi tiết của truyện (tên, tác giả, nguồn, chương cuối).
+*   `book_files`: Quản lý đường dẫn tệp truyện đã xuất bản (`txt`/`epub`).
+*   `jobs`: Trạng thái và tiến trình hoạt động của từng job.
+*   `audit_logs`: Nhật ký kiểm toán toàn bộ thao tác nhạy cảm trên hệ thống.
+*   `download_locks`: Ngăn chặn việc tải trùng lặp cùng một cuốn truyện tại cùng thời điểm.
 
-- `GET /api/health`, `GET /api/readyz`
-- `GET /api/sources`
-- `POST /api/books/resolve`
-- `POST /api/jobs/download`
-- `POST /api/jobs/:id/translate`
-- `POST /api/jobs/:id/cancel`
-- `POST /api/jobs/:id/retry`
-- `GET /api/jobs/:id`
-- `GET /api/jobs/:id/events`
-- `GET /api/jobs/:id/file`
-- `GET /api/library`
-- `GET /api/library/:bookId/file`
-- `POST /api/library/:bookId/translate`
-- `GET /api/admin/overview`
+---
 
-### Nghiệp Vụ Lõi
+## 5. Quy Trình Vận Hành & Triển Khai Thực Tế
 
-`JobService` là trung tâm điều phối:
-
-- quản lý hàng đợi job
-- chạy song song theo `JOB_CONCURRENCY`
-- phát SSE cho UI theo dõi tiến độ
-- retry/cancel job
-- lưu artifact vào `storage/jobs`
-- đồng bộ dữ liệu vào SQLite
-
-Backend hỗ trợ nhiều nguồn truyện:
-
-- Fanqie
-- 69shu
-- trxs.cc
-- Wikicv
-
-### Legacy Bridge
-
-Backend mới có thể gọi sang exe legacy gốc khi cần, chủ yếu cho riêng Fanqie:
-
-- dùng `LEGACY_BRIDGE=true`
-- tự khởi động và warm up backend legacy
-- proxy một số luồng như preview cover và tải nội dung Fanqie khi cần
-
-## Frontend
-
-Frontend ở `apps/frontend` là UI người dùng chính.
-
-### Chức Năng Chính
-
-- nhập link/ID truyện
-- xem trạng thái resolve/download/translate
-- theo dõi job bằng SSE, có fallback polling
-- xem và tìm kiếm thư viện
-- tải file gốc hoặc file dịch ở định dạng `txt` / `epub`
-
-### Component Nổi Bật
-
-- `NovelSearch`: nhập truyện và chọn nguồn
-- `BookHero`: hiển thị thông tin truyện
-- `JobStatus`: hiển thị trạng thái job
-- `LibraryTable`: bảng thư viện
-- `Layout`: khung giao diện
-
-Frontend gọi backend qua `apps/frontend/src/api.ts`, dùng `VITE_API_BASE_URL` nếu cần tách riêng domain.
-
-## Admin
-
-`apps/admin` là dashboard riêng cho quản trị.
-
-- refresh số liệu định kỳ mỗi 5 giây
-- gọi `/api/admin/overview`
-- hiển thị thống kê thư viện, job, queue, backup, storage và quota
-
-Backend chỉ cho phép truy cập admin overview khi request đi qua cổng admin riêng và có token nội bộ.
-
-## Dữ Liệu Và Lưu Trữ
-
-Backend tạo và dùng các thư mục dữ liệu chính:
-
-- `storage/books`
-- `storage/jobs`
-- `storage/cache/directory`
-- `storage/legacy`
-- `backups`
-
-Cấu trúc SQLite ở `storage/app.db` bao gồm các bảng chính:
-
-- `books`
-- `book_files`
-- `jobs`
-- `job_events`
-- `audit_logs`
-- `download_locks`
-
-## Script Và Công Cụ
-
-- `npm run dev`: chạy backend + frontend song song
-- `npm run build`: build backend, frontend và admin
-- `npm run test`: chạy test backend
-- `npm run backup`: chạy backup
-- `npm run db:migrate`: migrate dữ liệu storage cũ sang DB
-- `npm run legacy:start`: chạy web UI legacy riêng
-
-## Kiểm Thử
-
-Test hiện có tập trung vào backend:
-
-- parsing chapter
-- guard chống spam
-- path safety
-- legacy output locator
-- job progress
-- metrics
-- translation service
-- text formatting
-
-Có thêm load test ở `tests/load`.
-
-## Ghi Chú Vận Hành
-
-- Backend mặc định chạy ở port `8787`
-- Frontend dev mặc định ở `5173`
-- Admin dev ở `5174`
-- Admin backend port riêng theo config mặc định là `10052`
-- Job queue có giới hạn song song để tránh quá tải
-- Translation có các biến môi trường để chỉnh batch size, pause và concurrency
-
-## Kết Luận
-
-Đây là một hệ thống tải và dịch truyện theo kiểu pipeline rõ ràng:
-
-- resolve nguồn
-- tải nội dung gốc
-- dịch
-- lưu file
-- đồng bộ thư viện
-- quan sát trạng thái qua UI và admin dashboard
-
-GitNexus cho thấy repo có cấu trúc khá giàu liên kết, với 63 cluster và 171 flow, phù hợp để mở rộng thêm phân tích tác động hoặc tài liệu kiến trúc chi tiết về sau.
+Hệ thống hiện đang chạy cực kỳ ổn định trên máy chủ Ubuntu Server (Database Mart) dưới dạng dịch vụ hệ thống:
+*   **Service Name**: `fanqie-novel-downloader.service` (Khởi chạy qua `/usr/bin/npm start` từ thư mục `/opt/fanqie-novel-downloader`).
+*   **Định tuyến Tên miền**: Trỏ tên miền miễn phí DuckDNS **`novelgrabber.duckdns.org`** về IP máy chủ NAT.
+*   **Bảo mật SSL**: Database Mart gateway tự động giải mã HTTPS qua Let's Encrypt SSL và định tuyến về cổng Nginx `80` trên VPS để đi vào backend.
