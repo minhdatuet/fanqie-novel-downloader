@@ -22,7 +22,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps): React
                             <BookOpen className="h-6 w-6" />
                         </div>
                         <span className="hidden text-xl font-bold tracking-tight sm:inline-block">
-                            Tomato <span className="text-primary">Downloader</span>
+                            Novel <span className="text-primary">Grabber</span>
                         </span>
                     </div>
 

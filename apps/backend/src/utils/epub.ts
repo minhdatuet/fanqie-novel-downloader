@@ -194,7 +194,7 @@ function buildOpfDocument(params: {
     ${description ? `<dc:description>${description}</dc:description>` : ""}
     ${params.hasCover ? `<meta name="cover" content="cover-image"/>` : ""}
     <meta property="dcterms:modified">${formatUtcTimestamp(new Date())}</meta>
-    <meta name="generator" content="Tomato Downloader"/>
+    <meta name="generator" content="Novel Grabber"/>
   </metadata>
   <manifest>
     ${manifestItems.join("\n    ")}

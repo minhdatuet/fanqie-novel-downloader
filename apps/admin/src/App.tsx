@@ -53,7 +53,7 @@ export function App(): React.JSX.Element
                         </div>
                         <div>
                             <div className="text-lg font-bold tracking-tight">
-                                Tomato <span className="text-primary">Admin</span>
+                                Novel Grabber <span className="text-primary">Admin</span>
                             </div>
                             <div className="text-xs text-muted-foreground">
                                 Cổng quản trị riêng
